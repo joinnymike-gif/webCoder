@@ -37,6 +37,7 @@
   }
   * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #ffffff24 transparent; }
   [hidden] { display: none !important; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   html, body { height: 100%; height: 100dvh; margin: 0; overflow: hidden; background: var(--bg); color: var(--fg); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
   button, input, select, textarea { font: inherit; color: inherit; }
   button { cursor: pointer; }
@@ -274,8 +275,11 @@
   #edwrap.mdpv #ed { right: 50%; }
   #mdpv { position: absolute; top: 0; right: 0; width: 50%; height: 100%; border: 0; border-left: 1px solid var(--border); background: var(--bg); display: none; }
   #edwrap.mdpv #mdpv { display: block; }
-  #crumbs .md-pv-btn { margin-left: auto; height: 20px; color: var(--dim); }
-  #crumbs .md-pv-btn.on, #crumbs .md-pv-btn:hover { color: var(--fg); }
+  #crumbs .cr-path { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 1; overflow: hidden; }
+  #crumbs .cr-acts { display: flex; align-items: center; gap: 2px; flex: none; margin-left: 6px; }
+  #crumbs .cr-acts .ibtn { display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; height: 20px; width: auto; min-width: 20px; padding: 0 3px; gap: 4px; color: var(--dim); font-size: 11.5px; }
+  #crumbs .cr-acts .ibtn.on, #crumbs .cr-acts .ibtn:hover { color: var(--fg); }
+  #crumbs .cr-acts .cr-lbl { display: none; }
   #empty { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg); }
   .wm { text-align: center; color: var(--faint); }
   .wm .logo { font-size: 120px; opacity: .25; }
@@ -396,25 +400,27 @@
   .mob-empty-acts { margin-top: 18px; flex-direction: column; gap: 10px; align-items: center; }
   #mob-backdrop { display: none; }
 
-  @media (max-width: 384px) {
+  /* Phone layout: portrait phones (incl. Pro Max ~430px) and landscape phones. Keep in sync with MOBILE_MQ in the script. */
+  @media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+    :root { --dock: 50px; --wsbar: 38px; }
     .mob-only { display: inline-flex; }
     .act.mob-only { display: grid; }
     .mob-empty-acts.mob-only { display: flex; }
 
     /* Mobile code-browsing IDE layout: omit Extensions & Agent chat, bottom dock + slide-over drawer */
     #act-ext, #view-ext, #act-chat, #chat, #sash-chat, .sash, #status { display: none !important; }
-    #app { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) auto calc(50px + env(safe-area-inset-bottom, 0px)) !important; }
+    #app { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) auto calc(var(--dock) + env(safe-area-inset-bottom, 0px)) !important; }
     #main { grid-area: 1 / 1; }
-    #ws-bar { grid-area: 2 / 1; height: 38px; padding: 0 8px; }
-    #activity { grid-area: 3 / 1; width: 100%; height: calc(50px + env(safe-area-inset-bottom, 0px)); padding: 0 6px env(safe-area-inset-bottom, 0px); flex-direction: row; justify-content: space-around; align-items: center; border-right: 0; border-top: 1px solid var(--border); z-index: 40; }
+    #ws-bar { grid-area: 2 / 1; height: var(--wsbar); padding: 0 8px; }
+    #activity { grid-area: 3 / 1; width: 100%; height: calc(var(--dock) + env(safe-area-inset-bottom, 0px)); padding: 0 6px env(safe-area-inset-bottom, 0px); flex-direction: row; justify-content: space-around; align-items: center; border-right: 0; border-top: 1px solid var(--border); z-index: 40; }
     #act-home { width: 52px; height: 48px; border-bottom: 0; }
     .act { flex: 1; max-width: 72px; width: auto; height: 48px; }
     .act .codicon[class*='codicon-'] { font-size: 21px; }
     .act .act-badge { right: 12px; bottom: 8px; }
     .act.on::before, #act-home.on::before { left: 16px; right: 16px; top: 0; bottom: auto; width: auto; height: 2px; }
 
-    #mob-backdrop { display: block; position: fixed; inset: 0 0 calc(50px + env(safe-area-inset-bottom, 0px)) 0; z-index: 34; background: #00000080; backdrop-filter: blur(2px); }
-    #side { position: fixed; left: 0; top: 0; bottom: calc(50px + env(safe-area-inset-bottom, 0px)); width: min(86vw, 320px); z-index: 35; box-shadow: 12px 0 40px #000000b8; }
+    #mob-backdrop { display: block; position: fixed; inset: 0 0 calc(var(--dock) + env(safe-area-inset-bottom, 0px)) 0; z-index: 34; background: #00000080; backdrop-filter: blur(2px); }
+    #side { position: fixed; left: 0; top: 0; bottom: calc(var(--dock) + env(safe-area-inset-bottom, 0px)); width: min(86vw, 320px); z-index: 35; box-shadow: 12px 0 40px #000000b8; }
 
     /* Touch-friendly sizing & iOS anti-zoom input font-size */
     .ptitle { height: 42px; padding: 0 10px 0 14px; font-size: 12px; }
@@ -435,8 +441,16 @@
     #tabs { height: 40px; }
     .tab { padding: 0 6px 0 12px; font-size: 13px; }
     .tab .x { visibility: visible; }
-    #edwrap.mdpv #mdpv { width: 100%; } /* phone: preview covers the editor; the crumb button toggles back */
-    #crumbs { height: 24px; padding: 0 10px; font-size: 11.5px; overflow-x: auto; scrollbar-width: none; }
+    #edwrap.mdpv #mdpv { width: 100%; border-left: 0; } /* phone: preview covers the editor; the crumb button toggles back */
+    #edwrap.mdpv #ed { right: 0; visibility: hidden; }
+    #crumbs { height: 34px; padding: 0 4px 0 10px; font-size: 12px; border-bottom: 1px solid var(--border); }
+    #crumbs .cr-path { overflow-x: auto; scrollbar-width: none; }
+    #crumbs .cr-path::-webkit-scrollbar { display: none; }
+    #crumbs .cr-acts { gap: 4px; }
+    #crumbs .cr-acts .ibtn { height: 28px; min-width: 28px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--border); background: #ffffff06; }
+    #crumbs .cr-acts .ibtn.on { color: var(--strong); border-color: #6366f177; background: #6366f11f; }
+    #crumbs .cr-acts .cr-lbl { display: inline; }
+    #crumbs .cr-acts .cr-icon { padding: 0; width: 28px; }
     #diff .dbar { height: 40px; padding: 0 8px; gap: 6px; }
     #diff .dh { display: none; }
 
@@ -455,6 +469,15 @@
     #empty .wm .logo[class*='codicon-'] { font-size: 84px; }
     #toasts { left: 10px; right: 10px; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
     .toast { max-width: none; width: 100%; }
+  }
+  /* Landscape phones: every vertical pixel counts, so slim down the chrome around the code */
+  @media (pointer: coarse) and (max-height: 500px) {
+    :root { --dock: 40px; --wsbar: 32px; }
+    .act, #act-home { height: 40px; }
+    #tabs { height: 34px; }
+    #crumbs { height: 30px; }
+    #crumbs .cr-acts .ibtn { height: 24px; }
+    .ws-task, .ws-add { height: 24px; }
   }
 </style>
 </head>
@@ -748,7 +771,28 @@ function toast(text, kind = 'info') {
 const fail = e => { toast(e?.message || String(e), 'error'); };
 
 // ---------- layout ----------
-const isMobileUI = () => window.matchMedia('(max-width: 384px)').matches;
+// Phone layout (portrait phones up to tablets' width, plus landscape phones). Keep in sync with the CSS @media rule.
+const MOBILE_MQ = '(max-width: 767px), (pointer: coarse) and (max-height: 500px)';
+const isMobileUI = () => window.matchMedia(MOBILE_MQ).matches;
+// Phones get a reading-first editor: wrapped lines, no minimap/folding/rulers, and read-only (no on-screen keyboard)
+// until the user taps "编辑". Desktop values are Monaco's defaults so switching back restores them.
+let mobEdit = false;
+const wrapOn = (mob = isMobileUI()) => mob ? prefs.wrapMob !== false : !!prefs.wrap;
+function edLayoutOpts(mob = isMobileUI()) {
+  return {
+    minimap: { enabled: !mob }, glyphMargin: !mob, folding: !mob, lineNumbersMinChars: mob ? 2 : 5, lineDecorationsWidth: mob ? 6 : 10,
+    fontSize: 13, lineHeight: mob ? 20 : 0, overviewRulerLanes: mob ? 0 : 3, overviewRulerBorder: !mob, hideCursorInOverviewRuler: mob,
+    scrollbar: { verticalScrollbarSize: mob ? 5 : 14, horizontalScrollbarSize: mob ? 5 : 12, useShadows: !mob },
+    stickyScroll: { enabled: !mob }, renderLineHighlight: mob ? 'none' : 'all', occurrencesHighlight: mob ? 'off' : 'singleFile', selectionHighlight: !mob,
+    contextmenu: !mob, wordWrap: wrapOn(mob) ? 'on' : 'off', wrappingIndent: 'same',
+  };
+}
+const diffLayoutOpts = (mob = isMobileUI()) => ({ ...edLayoutOpts(mob), renderSideBySide: !mob, renderOverviewRuler: !mob, useInlineViewWhenSpaceIsLimited: true });
+function applyEdMode() {
+  if (!editor) return;
+  const hasFile = !!(active && tabs.has(active)), ro = !hasFile || (isMobileUI() && !mobEdit);
+  editor.updateOptions({ readOnly: ro, domReadOnly: ro && isMobileUI() });
+}
 const prefs = { sideW: 260, chatW: 340, side: true, chat: false, view: 'explorer', wrap: false, termH: 260 };
 try { Object.assign(prefs, JSON.parse(localStorage.webidePrefs || '{}')); } catch { /* storage unavailable */ }
 // prefs = what the user chose (saved). shown = what fits in this window right now (never saved),
@@ -766,7 +810,7 @@ function layout() {
     shown.chat = false;
     const sideOn = !homeOn && mobDrawer;
     $('#app').style.gridTemplateColumns = 'minmax(0, 1fr)';
-    $('#app').style.gridTemplateRows = `minmax(0, 1fr) ${barOn ? '38px' : '0px'} calc(50px + env(safe-area-inset-bottom, 0px))`;
+    $('#app').style.gridTemplateRows = `minmax(0, 1fr) ${barOn ? 'var(--wsbar)' : '0px'} calc(var(--dock) + env(safe-area-inset-bottom, 0px))`;
     $('#side').hidden = !sideOn;
     $('#sash-side').hidden = $('#sash-chat').hidden = $('#chat').hidden = $('#status').hidden = true;
     $('#mob-backdrop').hidden = !sideOn;
@@ -812,12 +856,10 @@ function layout() {
     lastMob = mob;
     // Booted in the narrow/mobile layout skips extensions; activate them once the window becomes desktop-sized
     if (!mob && !extsLoaded) loadExtensions().then(() => installedExts.forEach(e => notifyExtOpenDocs(e.dir))).catch(e => console.warn('Extensions init:', e));
-    editor.updateOptions({
-      minimap: { enabled: !mob },
-      glyphMargin: !mob,
-      lineNumbersMinChars: mob ? 3 : 5,
-      fontSize: mob ? 12.5 : 13,
-    });
+    if (!mob) mobEdit = false;
+    editor.updateOptions(edLayoutOpts(mob));
+    diff?.de.updateOptions(diffLayoutOpts(mob));
+    applyEdMode(); renderCrumbs();
   }
   try { localStorage.webidePrefs = JSON.stringify(prefs); } catch { /* storage unavailable */ }
 }
@@ -1963,7 +2005,7 @@ async function activate(rel, { noReveal = false } = {}) {
   if (editor) {
     // Never setModel(null): Monaco then rebuilds its view and, in 0.52, clicks on the rebuilt view stop focusing it.
     editor.setModel(t ? t.model : blankModel);
-    editor.updateOptions({ readOnly: !t });
+    applyEdMode();
     if (t?.view) editor.restoreViewState(t.view);
   }
   $('#empty').hidden = !!t;
@@ -2061,19 +2103,30 @@ $('#tabs').addEventListener('wheel', e => { if (Math.abs(e.deltaY) > Math.abs(e.
 function renderCrumbs() {
   const c = $('#crumbs');
   if (!active) return c.replaceChildren();
-  const parts = active.split('/');
-  c.replaceChildren(...parts.flatMap((p, i) => {
+  const parts = active.split('/'), mob = isMobileUI(), md = mdActive();
+  const path = el('span', 'cr-path'), acts = el('span', 'cr-acts');
+  path.append(...parts.flatMap((p, i) => {
     const last = i === parts.length - 1;
     const seg = el('span'); if (last) seg.append(fileIcon(p), ' '); seg.append(p);
     return i ? [icon('chevron-right'), seg] : [seg];
   }));
-  if (mdActive()) {
-    const b = el('button', 'ibtn md-pv-btn' + (mdOn ? ' on' : ''));
-    b.title = `${mdOn ? 'Close' : 'Open'} Preview to the Side (${K.mdpv})`;
-    b.append(icon(mdOn ? 'close' : 'open-preview'));
-    b.onclick = () => toggleMdPreview();
-    c.append(b);
+  const act = (cls, ic, label, title, run) => {
+    const b = el('button', 'ibtn ' + cls); b.title = title; b.append(icon(ic));
+    if (label) { const l = el('span', 'cr-lbl'); l.textContent = label; b.append(l); }
+    b.onclick = run; acts.append(b); return b;
+  };
+  if (mob) {
+    // Phone toolbar: Markdown reads as rendered text by default; code reads wrapped and read-only until "编辑".
+    if (!(md && mdOn)) {
+      act('cr-icon' + (wrapOn() ? ' on' : ''), 'word-wrap', '', `Toggle Word Wrap (${wrapOn() ? 'on' : 'off'})`, toggleWrap);
+      act(mobEdit ? 'on' : '', mobEdit ? 'check' : 'edit', mobEdit ? '完成' : '编辑', mobEdit ? 'Done editing (read-only)' : 'Edit this file', () => { mobEdit = !mobEdit; applyEdMode(); renderCrumbs(); if (mobEdit) editor?.focus(); });
+    }
+    if (md) act(mdOn ? '' : 'on', mdOn ? 'code' : 'open-preview', mdOn ? '源码' : '预览', mdOn ? 'Show Markdown source' : 'Show rendered Markdown', () => toggleMdPreview());
+  } else if (md) {
+    act('md-pv-btn' + (mdOn ? ' on' : ''), mdOn ? 'close' : 'open-preview', '', `${mdOn ? 'Close' : 'Open'} Preview to the Side (${K.mdpv})`, () => toggleMdPreview());
   }
+  c.replaceChildren(path, acts);
+  if (mob) path.scrollLeft = path.scrollWidth; // keep the file name, not the root folder, in view
 }
 // Returns true once written. force = overwrite whatever is on disk.
 async function saveTab(rel, force = false) {
@@ -2125,7 +2178,7 @@ async function openCompare(rel) {
   bar.append(icon('diff'), el('span', 'dt', `${base(rel)} (on disk) ↔ ${base(rel)} (yours)`), el('span', 'dh', 'Edit the right side to merge, then save.'), el('span', 'sp'), take, keep, x);
   const host = el('div', 'dhost');
   box.append(bar, host); $('#edwrap').append(box);
-  const de = monaco.editor.createDiffEditor(host, { automaticLayout: true, originalEditable: false, fontFamily: editor.getRawOptions().fontFamily, fontSize: editor.getRawOptions().fontSize, wordWrap: prefs.wrap ? 'on' : 'off' });
+  const de = monaco.editor.createDiffEditor(host, { ...diffLayoutOpts(), automaticLayout: true, originalEditable: false, fontFamily: editor.getRawOptions().fontFamily });
   de.setModel({ original: orig, modified: t.model });
   diff = { kind: 'conflict', rel, de, orig, etag, box };
   de.getModifiedEditor().focus();
@@ -2201,8 +2254,9 @@ function setIndent(spaces, size) {
   updateStatus();
 }
 function toggleWrap() {
-  prefs.wrap = !prefs.wrap;
-  const wordWrap = prefs.wrap ? 'on' : 'off';
+  if (isMobileUI()) prefs.wrapMob = !wrapOn(true); else prefs.wrap = !prefs.wrap;
+  const wordWrap = wrapOn() ? 'on' : 'off';
+  renderCrumbs();
   editor.updateOptions({ wordWrap });
   diff?.de.updateOptions({ wordWrap });
   layout(); // saves prefs
@@ -3187,7 +3241,7 @@ async function openGitDiff(rel, staged) {
   bar.append(icon('git-compare'), el('span', 'dt', `${rel} (Browser Snapshot ↔ Working Tree)`), el('span', 'sp'), openBtn, stageBtn, x);
   const host = el('div', 'dhost');
   box.append(bar, host); $('#edwrap').append(box);
-  const de = monaco.editor.createDiffEditor(host, { automaticLayout: true, readOnly: true, originalEditable: false, renderSideBySide: !isMobileUI(), fontFamily: editor.getRawOptions().fontFamily, fontSize: editor.getRawOptions().fontSize, wordWrap: prefs.wrap ? 'on' : 'off' });
+  const de = monaco.editor.createDiffEditor(host, { ...diffLayoutOpts(), automaticLayout: true, readOnly: true, originalEditable: false, fontFamily: editor.getRawOptions().fontFamily });
   de.setModel({ original: orig, modified: mod });
   diff = { kind: 'git', rel, staged, de, orig, mod, box };
 }
@@ -4797,16 +4851,27 @@ $('#ext-themes').onclick = () => quickOpen('', 'theme');
 
 // ---------- Markdown preview (built-in, like VS Code's "Open Preview to the Side") ----------
 // markdown-it renders into an iframe sandboxed WITHOUT allow-scripts: raw HTML in untrusted .md files can't run code in the IDE origin.
-var mdOn = false, mdIt = null, mdFrame = null, mdTimer = 0;
+var mdOn = isMobileUI(), mdIt = null, mdFrame = null, mdTimer = 0;
 function mdActive() { return tabs.get(active)?.model?.getLanguageId() === 'markdown'; }
-const MD_CSS = `html{color-scheme:dark light}
-body{margin:0;padding:16px 26px 50vh;font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--fg);background:var(--bg);overflow-wrap:anywhere}
-h1,h2,h3,h4,h5,h6{color:var(--strong);margin:1.3em 0 .6em;line-height:1.3} h1,h2{border-bottom:1px solid var(--border);padding-bottom:.3em}
-a{color:var(--accent)} img{max-width:100%} hr{border:0;border-top:1px solid var(--border);margin:1.5em 0}
+const MD_CSS = `html{color-scheme:dark light;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{margin:0;padding:16px 26px 50vh;font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--fg);background:var(--bg);overflow-wrap:break-word}
+h1,h2,h3,h4,h5,h6{color:var(--strong);margin:1.3em 0 .6em;line-height:1.3;scroll-margin-top:12px} h1,h2{border-bottom:1px solid var(--border);padding-bottom:.3em}
+a{color:var(--accent)} img,video{max-width:100%;height:auto} hr{border:0;border-top:1px solid var(--border);margin:1.5em 0}
+p,li{overflow-wrap:anywhere}
 code{font:12.5px ui-monospace,"SF Mono",Menlo,Consolas,monospace;background:#8882;padding:.15em .35em;border-radius:4px}
-pre{background:#8881;padding:12px 14px;border-radius:6px;overflow:auto} pre code{background:none;padding:0}
+pre{background:#8881;padding:12px 14px;border-radius:6px;overflow:auto;-webkit-overflow-scrolling:touch} pre code{background:none;padding:0;white-space:pre}
 blockquote{margin:0 0 1em;padding:0 1em;color:var(--dim);border-left:4px solid var(--border)}
-table{border-collapse:collapse;margin:0 0 1em} th,td{border:1px solid var(--border);padding:6px 12px}`;
+table{border-collapse:collapse;margin:0 0 1em;display:block;max-width:100%;width:max-content;overflow-x:auto;-webkit-overflow-scrolling:touch}
+th,td{border:1px solid var(--border);padding:6px 12px;vertical-align:top;overflow-wrap:normal;word-break:normal} th{background:#8881;text-align:left}
+td code,th code{white-space:nowrap}
+@media (max-width:600px){
+ body{padding:14px 16px 40vh;font-size:15px;line-height:1.7}
+ h1{font-size:1.55em} h2{font-size:1.3em} h3{font-size:1.12em} h4,h5,h6{font-size:1em}
+ ul,ol{padding-left:1.35em} li+li{margin-top:.2em}
+ code{font-size:12.5px} pre{margin:0 -16px 1em;padding:12px 16px;border-radius:0} pre code{font-size:12px;line-height:1.55}
+ blockquote{padding:0 .8em}
+ table{font-size:13.5px;line-height:1.5} th,td{padding:6px 10px;min-width:4.5em} td code,th code{white-space:normal;overflow-wrap:anywhere}
+}`;
 const mdSlug = s => s.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s+/g, '-');
 async function ensureMdIt() {
   if (mdIt) return mdIt;
@@ -4941,7 +5006,7 @@ async function openHistoryDiff(rel, entry) {
   bar.append(icon('history'), el('span', 'dt', `${base(rel)} (${when}) ↔ ${base(rel)} (current)`), el('span', 'sp'), restore, x);
   const host = el('div', 'dhost');
   box.append(bar, host); $('#edwrap').append(box);
-  const de = monaco.editor.createDiffEditor(host, { automaticLayout: true, readOnly: true, originalEditable: false, fontFamily: editor.getRawOptions().fontFamily, fontSize: editor.getRawOptions().fontSize, wordWrap: prefs.wrap ? 'on' : 'off' });
+  const de = monaco.editor.createDiffEditor(host, { ...diffLayoutOpts(), automaticLayout: true, readOnly: true, originalEditable: false, fontFamily: editor.getRawOptions().fontFamily });
   de.setModel({ original: orig, modified: t.model });
   diff = { kind: 'history', rel, de, orig, box };
 }
@@ -5132,8 +5197,7 @@ function startMonaco() {
     const mob = isMobileUI();
     lastMob = mob;
     editor = monaco.editor.create($('#ed'), {
-      model: blankModel, readOnly: true, theme: 'dark-modern', wordWrap: prefs.wrap ? 'on' : 'off', automaticLayout: true, fontFamily: 'ui-monospace, "SF Mono", Menlo, "Cascadia Mono", Consolas, monospace', fontSize: mob ? 12.5 : 13,
-      minimap: { enabled: !mob }, glyphMargin: !mob, lineNumbersMinChars: mob ? 3 : 5,
+      ...edLayoutOpts(mob), model: blankModel, readOnly: true, theme: 'dark-modern', automaticLayout: true, fontFamily: 'ui-monospace, "SF Mono", Menlo, "Cascadia Mono", Consolas, monospace',
       padding: { top: 6 }, smoothScrolling: true, cursorSmoothCaretAnimation: 'on', scrollBeyondLastLine: false, renderLineHighlight: 'all',
     });
     editor.onDidChangeCursorPosition(updateStatus);
