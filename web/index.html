@@ -228,7 +228,24 @@
   #panel { flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--side); border-top: 1px solid var(--border); }
   #panel[hidden] { display: none; }
   #panel .phead { height: 35px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 8px 0 20px; user-select: none; }
-  #panel .ptab { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--strong); padding: 4px 0 3px; border-bottom: 1px solid var(--strong); margin-right: 16px; }
+  #panel .ptab { font: inherit; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--dim); background: none; border: 0; border-bottom: 1px solid transparent; padding: 4px 0 3px; margin-right: 16px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  #panel .ptab:hover, #panel .ptab.on { color: var(--strong); } #panel .ptab.on { border-bottom-color: var(--strong); }
+  .badge { padding: 0 5px; border-radius: 8px; background: #ffffff1f; font-size: 10px; line-height: 15px; letter-spacing: 0; }
+  #panel.prob #terms, #panel.prob #term-new, #panel.prob #term-kill, #panel.prob #termbody { display: none; }
+  #panel:not(.prob) #probbody { display: none; }
+  #probbody { flex: 1; min-height: 0; overflow: auto; padding: 0 8px 8px 12px; font-size: 13px; }
+  #probbody .pf, #probbody .pi { display: flex; align-items: center; gap: 6px; height: 22px; cursor: pointer; white-space: nowrap; overflow: hidden; }
+  #probbody .pf .pdir, #probbody .pi .psrc { color: var(--dim); font-size: 12px; flex: none; }
+  #probbody .pi { padding-left: 22px; } #probbody .pi .pmsg { overflow: hidden; text-overflow: ellipsis; }
+  #probbody .pf:hover, #probbody .pi:hover { background: var(--hover); }
+  #probbody .pempty { color: var(--dim); padding: 6px 0; }
+  #ol-head { border-top: 1px solid var(--border); }
+  #outline { flex: none; max-height: 40%; overflow: auto; margin: 0; padding: 0 0 8px; list-style: none; }
+  #outline li { height: 22px; display: flex; align-items: center; gap: 5px; padding-right: 8px; cursor: pointer; white-space: nowrap; overflow: hidden; font-size: 13px; }
+  #outline li:hover { background: var(--hover); }
+  #outline li .codicon { color: var(--accent); flex: none; }
+  #outline li .ol-detail { color: var(--dim); font-size: 12px; }
+  #outline li.ol-empty { color: var(--faint); padding-left: 22px; cursor: default; }
   #terms { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
   #terms .tt { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 4px; color: var(--dim); cursor: pointer; font-size: 12px; white-space: nowrap; }
   #terms .tt:hover { color: var(--fg); } #terms .tt.on { background: #ffffff14; color: var(--fg); }
@@ -236,6 +253,11 @@
   #termbody > div { position: absolute; inset: 0 8px 4px 20px; }
   #termbody .xterm-viewport { scrollbar-width: thin; }
   #ed { position: absolute; inset: 0; }
+  #edwrap.mdpv #ed { right: 50%; }
+  #mdpv { position: absolute; top: 0; right: 0; width: 50%; height: 100%; border: 0; border-left: 1px solid var(--border); background: var(--bg); display: none; }
+  #edwrap.mdpv #mdpv { display: block; }
+  #crumbs .md-pv-btn { margin-left: auto; height: 20px; color: var(--dim); }
+  #crumbs .md-pv-btn.on, #crumbs .md-pv-btn:hover { color: var(--fg); }
   #empty { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg); }
   .wm { text-align: center; color: var(--faint); }
   .wm .logo { font-size: 120px; opacity: .25; }
@@ -350,10 +372,10 @@
   #dir-pick { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
   .drop-folder-hover { outline: 2px dashed var(--accent); outline-offset: -6px; }
   .mob-only { display: none; }
-  .mob-empty-acts { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  .mob-empty-acts { margin-top: 18px; flex-direction: column; gap: 10px; align-items: center; }
   #mob-backdrop { display: none; }
 
-  @media (max-width: 768px) {
+  @media (max-width: 384px) {
     .mob-only { display: inline-flex; }
     .act.mob-only { display: grid; }
     .mob-empty-acts.mob-only { display: flex; }
@@ -392,6 +414,7 @@
     #tabs { height: 40px; }
     .tab { padding: 0 6px 0 12px; font-size: 13px; }
     .tab .x { visibility: visible; }
+    #edwrap.mdpv #mdpv { width: 100%; } /* phone: preview covers the editor; the crumb button toggles back */
     #crumbs { height: 24px; padding: 0 10px; font-size: 11.5px; overflow-x: auto; scrollbar-width: none; }
     #diff .dbar { height: 40px; padding: 0 8px; gap: 6px; }
     #diff .dh { display: none; }
@@ -445,6 +468,8 @@
         </span>
       </div>
       <ul id="tree" tabindex="0" role="tree"></ul>
+      <div class="section" id="ol-head"><span class="codicon codicon-chevron-down" id="ol-tw"></span><span>Outline</span></div>
+      <ul id="outline"></ul>
     </div>
     <div id="welcome" class="welcome" hidden>
       <p>You have not yet opened a folder.</p>
@@ -534,7 +559,8 @@
     <div class="hsash" id="sash-panel" hidden></div>
     <section id="panel" hidden aria-label="Terminal">
       <div class="phead">
-        <span class="ptab">Terminal</span>
+        <button class="ptab" id="ptab-prob" data-tab="prob">Problems<span class="badge" hidden></span></button>
+        <button class="ptab on" id="ptab-term" data-tab="term">Terminal</button>
         <div id="terms" role="tablist"></div>
         <span class="sp"></span>
         <button class="ibtn" id="term-new" title="New Terminal"><span class="codicon codicon-add"></span></button>
@@ -542,6 +568,7 @@
         <button class="ibtn" id="panel-close" title="Hide Panel"><span class="codicon codicon-close"></span></button>
       </div>
       <div id="termbody"></div>
+      <div id="probbody"></div>
     </section>
   </main>
   <div class="sash" id="sash-chat"></div>
@@ -636,8 +663,8 @@ const MOD = isMac ? '⌘' : 'Ctrl';
 // Shortcut labels, shown the way each OS writes them. Chrome never lets a page take Ctrl+W / Ctrl+N / Ctrl+T,
 // so "close editor" is ⌃W on macOS and Alt+W elsewhere.
 const K = isMac
-  ? { save: '⌘S', saveAll: '⌥⌘S', open: '⌘O', quick: '⌘P', cmd: '⇧⌘P', close: '⌃W', side: '⌘B', rename: 'F2', del: '⌘⌫', line: '⌃G', find: '⇧⌘F', explorer: '⇧⌘E', git: '⌃⇧G', ext: '⇧⌘X', wrap: '⌥Z', term: '⌃`', newTerm: '⌃⇧`' }
-  : { save: 'Ctrl+S', saveAll: 'Ctrl+Alt+S', open: 'Ctrl+O', quick: 'Ctrl+P', cmd: 'Ctrl+Shift+P', close: 'Alt+W', side: 'Ctrl+B', rename: 'F2', del: 'Delete', line: 'Ctrl+G', find: 'Ctrl+Shift+F', explorer: 'Ctrl+Shift+E', git: 'Ctrl+Shift+G', ext: 'Ctrl+Shift+X', wrap: 'Alt+Z', term: 'Ctrl+`', newTerm: 'Ctrl+Shift+`' };
+  ? { save: '⌘S', saveAll: '⌥⌘S', open: '⌘O', quick: '⌘P', cmd: '⇧⌘P', close: '⌃W', side: '⌘B', rename: 'F2', del: '⌘⌫', line: '⌃G', find: '⇧⌘F', explorer: '⇧⌘E', git: '⌃⇧G', ext: '⇧⌘X', wrap: '⌥Z', term: '⌃`', newTerm: '⌃⇧`', mdpv: '⇧⌘V', prob: '⇧⌘M' }
+  : { save: 'Ctrl+S', saveAll: 'Ctrl+Alt+S', open: 'Ctrl+O', quick: 'Ctrl+P', cmd: 'Ctrl+Shift+P', close: 'Alt+W', side: 'Ctrl+B', rename: 'F2', del: 'Delete', line: 'Ctrl+G', find: 'Ctrl+Shift+F', explorer: 'Ctrl+Shift+E', git: 'Ctrl+Shift+G', ext: 'Ctrl+Shift+X', wrap: 'Alt+Z', term: 'Ctrl+`', newTerm: 'Ctrl+Shift+`', mdpv: 'Ctrl+Shift+V', prob: 'Ctrl+Shift+M' };
 const keyCaps = k => (isMac ? [...k.replace('F2', '\u0001')].map(c => c === '\u0001' ? 'F2' : c) : k.split('+')).map(c => el('kbd', '', c));
 const TRASH = isWin ? 'Recycle Bin' : 'Trash';
 const HIDDEN = new Set(['.git', '.DS_Store', 'Thumbs.db', 'desktop.ini']);
@@ -697,7 +724,7 @@ function toast(text, kind = 'info') {
 const fail = e => { toast(e?.message || String(e), 'error'); };
 
 // ---------- layout ----------
-const isMobileUI = () => window.matchMedia('(max-width: 768px)').matches;
+const isMobileUI = () => window.matchMedia('(max-width: 384px)').matches;
 const prefs = { sideW: 260, chatW: 340, side: true, chat: false, view: 'explorer', wrap: false, termH: 260 };
 try { Object.assign(prefs, JSON.parse(localStorage.webidePrefs || '{}')); } catch { /* storage unavailable */ }
 // prefs = what the user chose (saved). shown = what fits in this window right now (never saved),
@@ -759,6 +786,8 @@ function layout() {
   }
   if (editor && lastMob !== mob) {
     lastMob = mob;
+    // Booted in the narrow/mobile layout skips extensions; activate them once the window becomes desktop-sized
+    if (!mob && !extsLoaded) loadExtensions().then(() => installedExts.forEach(e => notifyExtOpenDocs(e.dir))).catch(e => console.warn('Extensions init:', e));
     editor.updateOptions({
       minimap: { enabled: !mob },
       glyphMargin: !mob,
@@ -776,6 +805,14 @@ function toggle(key) {
   prefs[key] = !shown[key];
   if (prefs[key]) lastOpened = key;
   layout();
+}
+// Quick "hide" button at the right end of every side bar / chat header (the bottom panel already has one)
+for (const [sel, key, ic, title] of [['#side .view > .ptitle', 'side', 'layout-sidebar-left-off', `Hide Side Bar (${K.side})`], ['#chat > .ptitle', 'chat', 'layout-sidebar-right-off', 'Hide Chat']]) {
+  for (const t of document.querySelectorAll(sel)) {
+    const b = el('button', 'ibtn'); b.title = title; b.append(icon(ic));
+    b.onclick = () => toggle(key);
+    t.append(b);
+  }
 }
 function sash(id, key, dir, min, max) {
   const s = $(id);
@@ -1817,14 +1854,20 @@ async function readFile(rel) {
 const fileText = t => (t.model ? t.model.getValue(monaco.editor.EndOfLinePreference.TextDefined, true) : (t.text ?? '')); // keeps the file's own EOL + BOM
 
 function modelChangeHandler(rel, t, e) {
-  if (!t.reloading) t.preview = false;
+  if (!t.reloading) { t.preview = false; scheduleAutoSave(rel); }
   renderTabs();
   renderProjectBar();
   if (t.model && typeof extBus !== 'undefined') extBus.fire('changeDoc', { rel, model: t.model, e });
 }
+// Monaco may already hold a model at this URI that no tab owns (TS go-to-definition / peek of an unopened file): replace it.
+function createFileModel(text, rel) {
+  const uri = monaco.Uri.file('/' + rel);
+  monaco.editor.getModel(uri)?.dispose();
+  return monaco.editor.createModel(text, undefined, uri);
+}
 function newModel(rel, text, etag = null) {
   if (!editor) return { model: null, text, saved: 0, etag, view: null, bom: text.charCodeAt(0) === 0xfeff, preview: false, reloading: false, dirty: false };
-  const model = monaco.editor.createModel(text, undefined, monaco.Uri.file('/' + rel));
+  const model = createFileModel(text, rel);
   const t = { model, saved: model.getAlternativeVersionId(), etag, view: null, bom: text.charCodeAt(0) === 0xfeff, preview: false, reloading: false, dirty: false };
   model.onDidChangeContent(e => modelChangeHandler(rel, t, e)); // typing pins a preview tab
   if (typeof extBus !== 'undefined') extBus.fire('openDoc', { rel, model });
@@ -1838,7 +1881,7 @@ async function ensureTabModel(rel, t) {
     text = d.text; t.etag = d.etag; t.bom = text.charCodeAt(0) === 0xfeff;
   }
   if (t.model) return t.model;
-  const model = monaco.editor.createModel(text ?? '', undefined, monaco.Uri.file('/' + rel));
+  const model = createFileModel(text ?? '', rel);
   t.model = model;
   t.saved = t.dirty ? -1 : model.getAlternativeVersionId();
   delete t.text;
@@ -1978,6 +2021,8 @@ function renderTabs() {
         { label: 'Close Saved', run: () => closeMany(keys.filter(k => !isDirty(tabs.get(k)))) },
         { label: 'Close All', run: () => closeMany(keys) },
         '-',
+        ...mdMenu(rel),
+        { label: 'Open Local History…', run: () => openLocalHistory(rel) },
         { label: 'Copy Path', run: () => copy(absPath(rel)) },
         { label: 'Copy Relative Path', run: () => copy(rel) },
         { label: 'Reveal in Explorer View', run: () => { showView('explorer'); reveal(rel); } },
@@ -1998,6 +2043,13 @@ function renderCrumbs() {
     const seg = el('span'); if (last) seg.append(fileIcon(p), ' '); seg.append(p);
     return i ? [icon('chevron-right'), seg] : [seg];
   }));
+  if (mdActive()) {
+    const b = el('button', 'ibtn md-pv-btn' + (mdOn ? ' on' : ''));
+    b.title = `${mdOn ? 'Close' : 'Open'} Preview to the Side (${K.mdpv})`;
+    b.append(icon(mdOn ? 'close' : 'open-preview'));
+    b.onclick = () => toggleMdPreview();
+    c.append(b);
+  }
 }
 // Returns true once written. force = overwrite whatever is on disk.
 async function saveTab(rel, force = false) {
@@ -2006,6 +2058,7 @@ async function saveTab(rel, force = false) {
   if (!isDirty(t) && !force) return true; // nothing to write (and nothing to conflict over)
   if (!t.model) await ensureTabModel(rel, t);
   const version = t.model.getAlternativeVersionId();
+  await historyBaseline(rel).catch(() => {});
   try {
     t.etag = await vfsWriteFile(activeProj(), rel, fileText(t), { force, expectedEtag: force ? null : t.etag });
   } catch (e) {
@@ -2013,6 +2066,7 @@ async function saveTab(rel, force = false) {
     return saveConflict(rel);
   }
   t.saved = version; t.dirty = false; renderTabs(); renderProjectBar();
+  recordHistory(rel, fileText(t)).catch(() => {});
   scheduleGitRefresh();
   if (t.model && typeof extBus !== 'undefined') extBus.fire('saveDoc', { rel, model: t.model });
   return true;
@@ -2149,6 +2203,8 @@ addEventListener('keydown', e => {
     : mod && e.shiftKey && k === 'f' ? () => openSearch()
     : mod && e.shiftKey && k === 'e' ? () => { showView('explorer'); $('#tree').focus(); }
     : mod && e.shiftKey && k === 'x' ? () => openExtView()
+    : mod && e.shiftKey && k === 'v' && !inTerm && mdActive() ? () => toggleMdPreview()
+    : mod && e.shiftKey && k === 'm' ? () => toggleProblems()
     : e.ctrlKey && e.shiftKey && !e.metaKey && k === 'g' ? () => openGitView()
     : e.altKey && !mod && !e.shiftKey && code === 'KeyZ' ? () => toggleWrap()
     : ((isMac && e.ctrlKey && !e.metaKey) || (!isMac && e.altKey && !e.ctrlKey)) && code === 'KeyW' ? () => { if (active) closeTab(active); }
@@ -2173,6 +2229,7 @@ const TERM_THEME = { // OpenIDE Obsidian
 function showPanel(on) {
   $('#panel').hidden = $('#sash-panel').hidden = !on;
   if (on) {
+    setPanelTab('term');
     layout();
     if (termOn && !termOn.attached) attachTerm(termOn);
     requestAnimationFrame(() => { termOn?.fit?.fit(); termOn?.term?.focus(); });
@@ -2264,6 +2321,19 @@ async function runBrowserTermCmd(x, rawLine) {
     }
   } catch (e) { out(`\x1b[31m${e.message}\x1b[0m\n`); }
 }
+// Classic <script> load that hides Monaco's AMD `define` so UMD bundles attach to window instead.
+// Ref-counted: `define.amd` comes back only after the last concurrent load finishes.
+let amdHidden = 0, amdSaved;
+function loadJs(src) {
+  return new Promise((res, rej) => {
+    if (!amdHidden++ && window.define) { amdSaved = window.define.amd; window.define.amd = undefined; }
+    const done = () => { if (!--amdHidden && window.define && amdSaved !== undefined) window.define.amd = amdSaved; };
+    const s = document.createElement('script'); s.src = src; s.async = false;
+    s.onload = () => { done(); res(); };
+    s.onerror = e => { done(); rej(e); };
+    document.head.append(s);
+  });
+}
 let xtermReady = null;
 function ensureXterm() {
   if (window.Terminal && window.FitAddon) return Promise.resolve();
@@ -2271,14 +2341,6 @@ function ensureXterm() {
   const loadCss = href => new Promise(res => {
     const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href;
     l.onload = l.onerror = res; document.head.append(l);
-  });
-  const loadJs = src => new Promise((res, rej) => {
-    const amd = window.define?.amd;
-    if (window.define) window.define.amd = undefined;
-    const s = document.createElement('script'); s.src = src; s.async = false;
-    s.onload = () => { if (window.define && amd !== undefined) window.define.amd = amd; res(); };
-    s.onerror = e => { if (window.define && amd !== undefined) window.define.amd = amd; rej(e); };
-    document.head.append(s);
   });
   xtermReady = (async () => {
     await Promise.all([
@@ -2558,7 +2620,7 @@ $('#tree').addEventListener('contextmenu', e => {
     { label: 'New Folder…', run: () => newEntry('folder') },
     '-',
     ...(it ? [
-      ...(it.dir ? [] : [{ label: 'Open', run: () => openFile(it.rel) }]),
+      ...(it.dir ? [] : [{ label: 'Open', run: () => openFile(it.rel) }, ...mdMenu(it.rel), { label: 'Open Local History…', run: () => openLocalHistory(it.rel) }]),
       { label: 'Copy Path', run: () => copy(absPath(it.rel)) },
       { label: 'Copy Relative Path', run: () => copy(it.rel) },
       '-',
@@ -2754,6 +2816,14 @@ const COMMANDS = () => [
   { label: 'Explorer: Refresh', run: renderTree },
   { label: 'Explorer: Collapse Folders', run: () => { expanded.clear(); return renderTree(); } },
   { label: 'Go to Line/Column…', key: K.line, run: gotoLine },
+  { label: 'View: Toggle Problems', key: K.prob, run: toggleProblems },
+  { label: `File: Toggle Auto Save (now ${prefs.autoSave ? 'on' : 'off'})`, run: toggleAutoSave },
+  ...(active ? [
+    { label: 'Local History: Find Entry to Restore…', run: () => openLocalHistory(active) },
+    { label: 'Format Document', run: () => editor.getAction('editor.action.formatDocument')?.run() },
+    { label: 'Go to Symbol in Editor…', run: () => editor.getAction('editor.action.quickOutline')?.run() },
+  ] : []),
+  ...(mdActive() ? [{ label: 'Markdown: Open Preview to the Side', key: K.mdpv, run: () => toggleMdPreview(true) }] : []),
   { label: 'Change End of Line Sequence (LF / CRLF)', run: toggleEol },
   { label: 'Search: Find in Files', key: K.find, run: () => openSearch() },
   { label: 'View: Show Explorer', key: K.explorer, run: () => showView('explorer') },
@@ -2821,6 +2891,10 @@ function qoRender() {
       run: () => (t.key === 'default' ? restoreDefaultTheme(true) : applyThemeByKey(t.key, true)),
     }));
     if (!rows.length) msg = 'No matching color themes installed.';
+  } else if (qo.mode === 'list') {
+    const q = v.trim().toLowerCase();
+    rows = (qo.listItems || []).filter(r => !q || r.label.toLowerCase().includes(q)).map(r => ({ ...r, pos: [] }));
+    if (!rows.length) msg = 'No matching entries';
   } else if (v.startsWith('>')) {
     const q = v.slice(1).trim().toLowerCase();
     rows = COMMANDS().map(c => ({ ...c, m: q ? fuzzy(q, c.label) : { score: 0, pos: [] } })).filter(c => c.m)
@@ -3343,7 +3417,7 @@ let activeThemeKey = 'default';
 try { activeThemeKey = localStorage.webideTheme || 'default'; } catch {}
 const extFactories = new Map(); // extDir -> factory(require, module, exports, define)
 const extActive = new Map();    // extDir -> { disposables, commands: Map<id, fn>, exports }
-let extBuiltins = new Set();
+let extBuiltins = new Set(), extsLoaded = false;
 
 const DEFAULT_CSS_VARS = (() => {
   const s = getComputedStyle(document.documentElement);
@@ -3629,8 +3703,12 @@ const extTaskProviders = [];
 function refreshProblemsStatus() {
   const btn = $('#st-prob');
   if (!btn || !window.monaco || !editor) return;
-  const markers = monaco.editor.getModelMarkers({});
-  if (!markers.length) { btn.hidden = true; return; }
+  const markers = problemList();
+  const badge = $('#ptab-prob .badge');
+  badge.hidden = !markers.length; badge.textContent = markers.length;
+  renderProblems();
+  btn.hidden = false;
+  if (!markers.length) { btn.replaceChildren(icon('check'), el('span', '', '0')); return; }
   let errs = 0, warns = 0;
   for (const m of markers) {
     if (m.severity >= monaco.MarkerSeverity.Error) errs++;
@@ -3643,11 +3721,52 @@ function refreshProblemsStatus() {
   if (warns || !errs) parts.push(`${warns + (warns || errs ? 0 : infos)}W`);
   btn.replaceChildren(icon('warning', errs ? 'err' : 'warn'), el('span', '', parts.join(' ')));
 }
-$('#st-prob').onclick = () => {
-  if (!editor || !active) return;
-  editor.focus();
-  editor.getAction('editor.action.marker.next')?.run();
-};
+$('#st-prob').onclick = () => toggleProblems();
+$('#st-prob').title = `Toggle Problems (${K.prob})`;
+// Problems panel: markers of this workspace's open editors (Monaco language services + extension diagnostics)
+const relOfUri = u => u.path.replace(/^\/+/, '');
+function problemList() { return monaco.editor.getModelMarkers({}).filter(m => m.resource.scheme === 'file' && tabs.has(relOfUri(m.resource))); }
+function setPanelTab(tab) {
+  $('#panel').classList.toggle('prob', tab === 'prob');
+  for (const b of $$('#panel .ptab')) b.classList.toggle('on', b.dataset.tab === tab);
+  renderProblems();
+}
+function toggleProblems() {
+  if (!$('#panel').hidden && $('#panel').classList.contains('prob')) return showPanel(false);
+  $('#panel').hidden = $('#sash-panel').hidden = false;
+  setPanelTab('prob'); layout();
+}
+$('#ptab-prob').onclick = () => setPanelTab('prob');
+$('#ptab-term').onclick = () => (terms.length ? showPanel(true) : newTerminal().catch(fail));
+function renderProblems() {
+  if ($('#panel').hidden || !$('#panel').classList.contains('prob') || !window.monaco) return;
+  const byFile = new Map();
+  for (const m of problemList()) { const rel = relOfUri(m.resource); if (!byFile.has(rel)) byFile.set(rel, []); byFile.get(rel).push(m); }
+  const rows = [];
+  for (const [rel, ms] of [...byFile].sort((a, b) => a[0].localeCompare(b[0]))) {
+    ms.sort((a, b) => b.severity - a.severity || a.startLineNumber - b.startLineNumber || a.startColumn - b.startColumn);
+    const name = base(rel), f = el('div', 'pf');
+    f.append(icon('chevron-down'), fileIcon(name), el('span', '', name), el('span', 'pdir', rel.slice(0, -name.length).replace(/\/$/, '')), el('span', 'badge', String(ms.length)));
+    f.onclick = () => openFile(rel).catch(fail);
+    rows.push(f);
+    for (const m of ms) {
+      const [ic, cls] = m.severity >= 8 ? ['error', 'err'] : m.severity >= 4 ? ['warning', 'warn'] : ['info', ''];
+      const code = m.code && typeof m.code === 'object' ? m.code.value : m.code;
+      const r = el('div', 'pi'); r.title = m.message;
+      r.append(icon(ic, cls), el('span', 'pmsg', m.message), el('span', 'psrc', `${m.source || m.owner}${code ? `(${code})` : ''} [Ln ${m.startLineNumber}, Col ${m.startColumn}]`));
+      r.onclick = () => gotoPosition(rel, m.startLineNumber, m.startColumn).catch(fail);
+      rows.push(r);
+    }
+  }
+  if (!rows.length) rows.push(el('div', 'pempty', 'No problems have been detected in the open editors.'));
+  $('#probbody').replaceChildren(...rows);
+}
+async function gotoPosition(rel, line, col) {
+  if (active !== rel) await openFile(rel);
+  if (active !== rel) return;
+  editor.setSelection({ startLineNumber: line, startColumn: col, endLineNumber: line, endColumn: col });
+  editor.revealLineInCenter(line); editor.focus();
+}
 
 function createVscodeApi(ext, disposables, cmdMap) {
   class Disposable { constructor(fn) { this._fn = fn; } dispose() { try { this._fn?.(); } catch {} } static from(...ds) { return new Disposable(() => ds.forEach(d => d?.dispose?.())); } }
@@ -4080,7 +4199,7 @@ function createVscodeApi(ext, disposables, cmdMap) {
           forEach(cb) { for (const [p, v] of store) cb(Uri.file(p), v.raw, col); },
           get: u => store.get(normUriPath(u?.path || u))?.raw,
           has: u => store.has(normUriPath(u?.path || u)),
-          dispose() { clearAll(); extDiagRegistry.delete(owner); },
+          dispose() { extDiagRegistry.delete(owner); clearAll(); },
         };
         disposables.push(col);
         return col;
@@ -4415,6 +4534,7 @@ async function loadExtensions(prefetched = null) {
   installedExts = prefetched || await dbAll('extensions').catch(() => []);
   renderExtensions();
   if (!editor) return;
+  extsLoaded = true;
   if (!extBuiltins.size) extBuiltins = new Set(monaco.languages.getLanguages().map(l => l.id));
   if (activeThemeKey !== 'default') {
     if (!applyThemeByKey(activeThemeKey, false)) restoreDefaultTheme(false);
@@ -4651,6 +4771,297 @@ $('#ext-clear').onclick = () => { $('#ext-q').value = ''; $('#ext-clear').hidden
 $('#ext-refresh').onclick = () => { dbAll('extensions').then(list => { installedExts = list; }).catch(() => {}); searchMarketplace($('#ext-q').value.trim()); };
 $('#ext-themes').onclick = () => quickOpen('', 'theme');
 
+// ---------- Markdown preview (built-in, like VS Code's "Open Preview to the Side") ----------
+// markdown-it renders into an iframe sandboxed WITHOUT allow-scripts: raw HTML in untrusted .md files can't run code in the IDE origin.
+var mdOn = false, mdIt = null, mdFrame = null, mdTimer = 0;
+function mdActive() { return tabs.get(active)?.model?.getLanguageId() === 'markdown'; }
+const MD_CSS = `html{color-scheme:dark light}
+body{margin:0;padding:16px 26px 50vh;font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--fg);background:var(--bg);overflow-wrap:anywhere}
+h1,h2,h3,h4,h5,h6{color:var(--strong);margin:1.3em 0 .6em;line-height:1.3} h1,h2{border-bottom:1px solid var(--border);padding-bottom:.3em}
+a{color:var(--accent)} img{max-width:100%} hr{border:0;border-top:1px solid var(--border);margin:1.5em 0}
+code{font:12.5px ui-monospace,"SF Mono",Menlo,Consolas,monospace;background:#8882;padding:.15em .35em;border-radius:4px}
+pre{background:#8881;padding:12px 14px;border-radius:6px;overflow:auto} pre code{background:none;padding:0}
+blockquote{margin:0 0 1em;padding:0 1em;color:var(--dim);border-left:4px solid var(--border)}
+table{border-collapse:collapse;margin:0 0 1em} th,td{border:1px solid var(--border);padding:6px 12px}`;
+const mdSlug = s => s.trim().toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, '').replace(/\s+/g, '-');
+async function ensureMdIt() {
+  if (mdIt) return mdIt;
+  if (!window.markdownit) await loadJs('https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js');
+  mdIt = window.markdownit({ html: true, linkify: true });
+  // Tag blocks with their source line (scroll sync) and headings with VS Code-style ids (#anchor links).
+  mdIt.core.ruler.push('webide_src', st => st.tokens.forEach((t, i) => {
+    if (t.map && (t.nesting === 1 || t.type === 'fence' || t.type === 'code_block' || t.type === 'hr')) t.attrSet('data-line', String(t.map[0]));
+    if (t.type === 'heading_open') t.attrSet('id', mdSlug(st.tokens[i + 1]?.content || ''));
+  }));
+  return mdIt;
+}
+const mdResolve = href => vsixResolve(href.startsWith('/') ? '' : active.split('/').slice(0, -1).join('/'), decodeURIComponent(href.split(/[?#]/)[0]));
+const isExternalRef = href => /^([a-z][a-z0-9+.-]*:|\/\/)/i.test(href);
+function mdClick(e) {
+  const a = e.target.closest?.('a[href]');
+  if (!a) return;
+  e.preventDefault();
+  const href = a.getAttribute('href');
+  if (href.startsWith('#')) return mdFrame.contentDocument.getElementById(decodeURIComponent(href.slice(1)))?.scrollIntoView();
+  if (isExternalRef(href)) { if (/^https?:/i.test(href)) window.open(href, '_blank', 'noopener'); return; }
+  openFile(mdResolve(href)).catch(fail);
+}
+function mdFrameEl() {
+  if (mdFrame) return mdFrame;
+  mdFrame = el('iframe'); mdFrame.id = 'mdpv'; mdFrame.title = 'Markdown Preview';
+  mdFrame.setAttribute('sandbox', 'allow-same-origin'); // DOM access for rendering/scroll sync; no scripts, forms or popups
+  mdFrame.srcdoc = `<!doctype html><meta charset="utf-8"><style>${MD_CSS}</style><body></body>`;
+  mdFrame.onload = () => { mdFrame.contentDocument.addEventListener('click', mdClick); renderMd().catch(() => {}); };
+  $('#edwrap').append(mdFrame);
+  editor.onDidScrollChange(() => { if (mdOn) syncMdScroll(); });
+  return mdFrame;
+}
+async function renderMd() {
+  const t = tabs.get(active), doc = mdFrame?.contentDocument, rel = active;
+  if (!mdOn || !doc?.body || !t?.model) return;
+  const md = await ensureMdIt();
+  if (rel !== active) return;
+  const css = getComputedStyle(document.documentElement);
+  for (const k of ['--bg', '--fg', '--strong', '--dim', '--border', '--accent']) doc.documentElement.style.setProperty(k, css.getPropertyValue(k));
+  doc.body.innerHTML = md.render(t.model.getValue());
+  // Workspace-relative images: inline from the browser-local VFS as data: URLs (CSP img-src allows data:)
+  for (const img of doc.querySelectorAll('img[src]')) {
+    const src = img.getAttribute('src');
+    if (isExternalRef(src)) continue;
+    img.removeAttribute('src');
+    const p = mdResolve(src);
+    vfsReadBytes(activeProj(), p).then(u8 => { img.src = bytesToDataUrl(u8, p); }).catch(() => {});
+  }
+  syncMdScroll();
+}
+// ponytail: snaps to the block at the editor's top line (no intra-block interpolation, no preview→editor sync)
+function syncMdScroll() {
+  const doc = mdFrame?.contentDocument;
+  if (!doc?.body || !editor) return;
+  const top = (editor.getVisibleRanges()[0]?.startLineNumber ?? 1) - 1;
+  let best = null;
+  for (const e of doc.querySelectorAll('[data-line]')) { if (+e.dataset.line <= top) best = e; else break; }
+  doc.scrollingElement.scrollTop = top && best ? best.getBoundingClientRect().top + doc.scrollingElement.scrollTop - 12 : 0;
+}
+function updateMdPreview() {
+  const show = mdOn && mdActive();
+  $('#edwrap').classList.toggle('mdpv', show);
+  if (show) { mdFrameEl(); renderMd().catch(() => {}); }
+  renderCrumbs();
+}
+function toggleMdPreview(on = !mdOn) { mdOn = on; updateMdPreview(); }
+// Context-menu entry (explorer + tabs) for markdown files: open the file and its side preview in one click
+function mdMenu(rel) {
+  return /\.(md|markdown|mdown|mkd)$/i.test(rel) ? [{ label: 'Open Preview to the Side', key: K.mdpv, run: () => openFile(rel).then(() => toggleMdPreview(true)) }] : [];
+}
+extBus.on('activeEditor', 'builtin:mdpv', updateMdPreview);
+extBus.on('changeDoc', 'builtin:mdpv', p => {
+  if (!mdOn || p.rel !== active) return;
+  clearTimeout(mdTimer); mdTimer = setTimeout(() => renderMd().catch(() => {}), 120);
+});
+
+// ---------- auto save (afterDelay, 1s) ----------
+const autoSaveTimers = new Map();
+function toggleAutoSave() { prefs.autoSave = !prefs.autoSave; layout(); toast(`Auto Save ${prefs.autoSave ? 'on — files save 1s after you stop typing' : 'off'}`); }
+function scheduleAutoSave(rel) {
+  if (!prefs.autoSave) return;
+  clearTimeout(autoSaveTimers.get(rel));
+  autoSaveTimers.set(rel, setTimeout(() => {
+    autoSaveTimers.delete(rel);
+    const t = tabs.get(rel);
+    if (t && isDirty(t)) saveTab(rel).catch(() => {});
+  }, 1000));
+}
+
+// ---------- local history: saved versions per file, browser-local (IndexedDB `meta`) ----------
+// ponytail: whole-text copies, 30 per file, saves within 30s merged; entries of deleted workspaces are never pruned.
+const HIST_MAX = 30, HIST_MERGE_MS = 30e3, HIST_MAX_CHARS = 512 * 1024;
+const histKey = rel => `hist:${root}:${rel}`;
+async function historyBaseline(rel) { // first save: remember the on-disk version we are about to overwrite
+  if (!root || await dbGet('meta', histKey(rel))) return;
+  const { text } = await vfsReadFile(activeProj(), rel);
+  if (text.length <= HIST_MAX_CHARS) await dbPut('meta', { key: histKey(rel), entries: [{ t: Date.now(), text, src: 'original' }] });
+}
+async function recordHistory(rel, text) {
+  if (!root || text.length > HIST_MAX_CHARS) return;
+  const key = histKey(rel), rec = (await dbGet('meta', key)) || { key, entries: [] }, last = rec.entries[0], now = Date.now();
+  if (last?.text === text) return;
+  if (last?.src === 'save' && now - last.t < HIST_MERGE_MS) rec.entries[0] = { t: now, text, src: 'save' };
+  else rec.entries.unshift({ t: now, text, src: 'save' });
+  rec.entries.length = Math.min(rec.entries.length, HIST_MAX);
+  await dbPut('meta', rec);
+}
+async function openLocalHistory(rel) {
+  const entries = (await dbGet('meta', histKey(rel)).catch(() => null))?.entries || [];
+  if (!entries.length) return toast(`No local history for ${base(rel)} yet — versions are recorded when you save.`);
+  qo.listItems = entries.map(e => ({ label: `${new Date(e.t).toLocaleString()}${e.src === 'original' ? '  ·  before first save' : ''}`, run: () => openHistoryDiff(rel, e) }));
+  quickOpen('', 'list');
+}
+async function openHistoryDiff(rel, entry) {
+  await openFile(rel);
+  const t = tabs.get(rel);
+  if (active !== rel || !t?.model) return;
+  closeCompare();
+  const when = new Date(entry.t).toLocaleString();
+  const orig = monaco.editor.createModel(entry.text, t.model.getLanguageId());
+  const box = el('div'); box.id = 'diff';
+  const restore = el('button', 'btn', 'Restore This Version'), x = el('button', 'ibtn');
+  restore.title = 'Replace the editor contents with this version (undoable; save to keep it)';
+  x.title = 'Close'; x.append(icon('close'));
+  restore.onclick = () => {
+    t.model.pushEditOperations([], [{ range: t.model.getFullModelRange(), text: entry.text }], () => null);
+    closeCompare(); toast(`Restored ${base(rel)} to ${when}. Save to keep it.`);
+  };
+  x.onclick = () => closeCompare();
+  const bar = el('div', 'dbar');
+  bar.append(icon('history'), el('span', 'dt', `${base(rel)} (${when}) ↔ ${base(rel)} (current)`), el('span', 'sp'), restore, x);
+  const host = el('div', 'dhost');
+  box.append(bar, host); $('#edwrap').append(box);
+  const de = monaco.editor.createDiffEditor(host, { automaticLayout: true, readOnly: true, originalEditable: false, fontFamily: editor.getRawOptions().fontFamily, fontSize: editor.getRawOptions().fontSize, wordWrap: prefs.wrap ? 'on' : 'off' });
+  de.setModel({ original: orig, modified: t.model });
+  diff = { kind: 'history', rel, de, orig, box };
+}
+
+// ---------- cross-file TS/JS IntelliSense: unopened workspace sources become TS extraLibs at their real file:// URIs ----------
+const TS_SRC = /\.(tsx?|jsx?|mjs|cjs|mts|cts)$/i, TS_LANGS = new Set(['typescript', 'javascript']);
+let tsIndexedRoot = null;
+const tsDefaults = () => [monaco.languages.typescript.typescriptDefaults, monaco.languages.typescript.javascriptDefaults];
+async function indexTsWorkspace() {
+  const proj = activeProj(), r = root;
+  if (!proj || tsIndexedRoot === r) return;
+  tsIndexedRoot = r;
+  const { files } = await vfsAllFiles(proj, { skipHeavy: true, limit: 20000 });
+  // ponytail: first 2000 sources, read once per workspace; new/renamed files join on the next workspace switch
+  const srcs = files.filter(f => TS_SRC.test(f) && !/(^|\/)node_modules\//.test(f)).slice(0, 2000), libs = [];
+  for (let i = 0; i < srcs.length; i += 32) {
+    const res = await Promise.allSettled(srcs.slice(i, i + 32).map(f => vfsReadFile(proj, f)));
+    if (root !== r) return;
+    res.forEach((x, j) => { if (x.status === 'fulfilled' && x.value.text.length < 1e6) libs.push({ content: x.value.text, filePath: monaco.Uri.file('/' + srcs[i + j]).toString() }); });
+  }
+  for (const d of tsDefaults()) d.setExtraLibs(libs);
+}
+extBus.on('activeEditor', 'builtin:ts', p => { if (p?.model && TS_LANGS.has(p.model.getLanguageId())) indexTsWorkspace().catch(() => {}); });
+extBus.on('closeDoc', 'builtin:ts', p => { // a closed file falls back to its extraLib: keep that copy current
+  if (tsIndexedRoot === root && TS_SRC.test(p.rel)) for (const d of tsDefaults()) d.addExtraLib(p.model.getValue(), p.model.uri.toString());
+});
+
+// ---------- language-feature taps: built-in Monaco modes and extensions register through these ----------
+// (a) Prettier stays the newest, i.e. preferred, formatter; the built-in one is its offline fallback. (b) the Outline can query symbol providers.
+const PRETTIER = 'https://cdn.jsdelivr.net/npm/prettier@3.3.3/';
+const PRETTIER_LANGS = {
+  javascript: ['babel', ['babel', 'estree']], typescript: ['typescript', ['typescript', 'estree']], json: ['json', ['babel', 'estree']],
+  css: ['css', ['postcss']], scss: ['scss', ['postcss']], less: ['less', ['postcss']], html: ['html', ['html', 'postcss', 'babel', 'estree']],
+  markdown: ['markdown', ['markdown']], yaml: ['yaml', ['yaml']], graphql: ['graphql', ['graphql']],
+};
+const jsLoads = new Map();
+const loadJsOnce = url => jsLoads.get(url) || (jsLoads.set(url, loadJs(url).catch(e => { jsLoads.delete(url); throw e; })), jsLoads.get(url));
+async function prettierFormat(model, opts) {
+  const [parser, plugins] = PRETTIER_LANGS[model.getLanguageId()];
+  await loadJsOnce(PRETTIER + 'standalone.js');
+  await Promise.all(plugins.map(n => loadJsOnce(`${PRETTIER}plugins/${n}.js`)));
+  let rc = {};
+  try { rc = parseJsonc((await vfsReadFile(activeProj(), '.prettierrc')).text) || {}; } catch {} // ponytail: JSON .prettierrc only
+  return window.prettier.format(model.getValue(), { tabWidth: opts.tabSize, useTabs: !opts.insertSpaces, ...rc, parser, filepath: relOfUri(model.uri), plugins: plugins.map(n => window.prettierPlugins[n]) });
+}
+const fmtFallback = new Map(), prettierRegs = new Map(), symProviders = [];
+function tapLanguageFeatures() {
+  const L = monaco.languages, regFmt = L.registerDocumentFormattingEditProvider.bind(L), regSym = L.registerDocumentSymbolProvider.bind(L);
+  const langsOf = sel => (Array.isArray(sel) ? sel : [sel]).map(x => (typeof x === 'string' ? x : x?.language)).filter(Boolean);
+  const regPrettier = lang => {
+    prettierRegs.get(lang)?.dispose();
+    prettierRegs.set(lang, regFmt(lang, { displayName: 'Prettier', async provideDocumentFormattingEdits(model, opts, token) {
+      try {
+        const text = await prettierFormat(model, opts);
+        return text === model.getValue() ? [] : [{ range: model.getFullModelRange(), text }];
+      } catch (e) {
+        if (e instanceof Error) { toast(`Prettier: ${String(e.message).split('\n')[0]}`, 'error'); return []; } // syntax error in the file
+        const fb = fmtFallback.get(lang); // script load failed (offline): built-in formatter
+        if (fb?.provideDocumentFormattingEdits) return fb.provideDocumentFormattingEdits(model, opts, token);
+        if (fb) return fb.provideDocumentRangeFormattingEdits(model, model.getFullModelRange(), opts, token); // TS/JS only ship a range formatter
+        toast('Prettier could not be loaded (offline?)', 'error'); return [];
+      }
+    } }));
+  };
+  L.registerDocumentFormattingEditProvider = (sel, prov) => {
+    const d = regFmt(sel, prov);
+    for (const l of langsOf(sel)) if (PRETTIER_LANGS[l]) { fmtFallback.set(l, prov); regPrettier(l); }
+    return d;
+  };
+  const regRange = L.registerDocumentRangeFormattingEditProvider.bind(L);
+  L.registerDocumentRangeFormattingEditProvider = (sel, prov) => {
+    for (const l of langsOf(sel)) if (PRETTIER_LANGS[l] && !fmtFallback.has(l)) fmtFallback.set(l, prov);
+    return regRange(sel, prov);
+  };
+  L.registerDocumentSymbolProvider = (sel, prov) => {
+    const rec = { langs: langsOf(sel), prov };
+    symProviders.push(rec);
+    const d = regSym(sel, prov);
+    return { dispose() { d.dispose(); const i = symProviders.indexOf(rec); if (i >= 0) symProviders.splice(i, 1); } };
+  };
+  for (const l of Object.keys(PRETTIER_LANGS)) regPrettier(l);
+  // Markdown headings as symbols: feeds the Outline and Go to Symbol (⇧⌘O)
+  L.registerDocumentSymbolProvider('markdown', { provideDocumentSymbols(model) {
+    const out = [], stack = [];
+    let fence = null;
+    model.getLinesContent().forEach((line, i) => {
+      const f = line.match(/^\s{0,3}(`{3,}|~{3,})/);
+      if (f) { if (!fence) fence = f[1][0]; else if (f[1][0] === fence) fence = null; return; }
+      const m = !fence && line.match(/^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/);
+      if (!m) return;
+      const range = { startLineNumber: i + 1, startColumn: 1, endLineNumber: i + 1, endColumn: line.length + 1 };
+      const sym = { name: m[2] || ' ', detail: '', kind: L.SymbolKind.String, tags: [], range, selectionRange: range, children: [] };
+      while (stack.length && stack.at(-1).level >= m[1].length) stack.pop();
+      (stack.at(-1)?.sym.children || out).push(sym);
+      stack.push({ level: m[1].length, sym });
+    });
+    return out;
+  } });
+}
+
+// ---------- Outline (bottom section of the Explorer) ----------
+let olTimer = 0, olSeq = 0;
+const SYM_ICON = { Constructor: 'method', Module: 'namespace', Object: 'namespace', TypeParameter: 'type-parameter', EnumMember: 'enum-member' };
+const symIcon = kind => { const n = monaco.languages.SymbolKind[kind] || 'Misc'; return 'symbol-' + (SYM_ICON[n] || n.toLowerCase()); };
+async function renderOutline() {
+  const ul = $('#outline');
+  if (!ul || ul.hidden || !window.monaco) return;
+  const seq = ++olSeq, model = active && tabs.get(active)?.model;
+  if (!model) return ul.replaceChildren(el('li', 'ol-empty', 'No editor is active.'));
+  const lang = model.getLanguageId(), token = new monaco.CancellationTokenSource().token;
+  let syms = null;
+  for (const p of symProviders) {
+    if (!p.langs.includes(lang) && !p.langs.includes('*')) continue;
+    try { syms = await p.prov.provideDocumentSymbols(model, token); } catch {}
+    if (syms?.length) break;
+  }
+  if (seq !== olSeq) return;
+  if (!syms?.length) return ul.replaceChildren(el('li', 'ol-empty', 'No symbols found in document.'));
+  const rows = [];
+  const walk = (list, depth) => {
+    for (const s of [...list].sort((a, b) => a.range.startLineNumber - b.range.startLineNumber || a.range.startColumn - b.range.startColumn)) {
+      const li = el('li'), r = s.selectionRange || s.range;
+      li.style.paddingLeft = 12 + depth * 14 + 'px'; li.title = s.name;
+      li.append(icon(symIcon(s.kind)), el('span', '', s.name));
+      if (s.detail) li.append(el('span', 'ol-detail', s.detail));
+      li.onclick = () => gotoPosition(active, r.startLineNumber, r.startColumn).catch(fail);
+      rows.push(li);
+      if (s.children?.length) walk(s.children, depth + 1);
+    }
+  };
+  walk(syms, 0);
+  ul.replaceChildren(...rows);
+}
+function scheduleOutline() { clearTimeout(olTimer); olTimer = setTimeout(() => renderOutline().catch(() => {}), 300); }
+extBus.on('activeEditor', 'builtin:outline', scheduleOutline);
+extBus.on('changeDoc', 'builtin:outline', p => { if (p.rel === active) scheduleOutline(); });
+function syncOutlineHead() {
+  const open = prefs.outline !== false;
+  $('#outline').hidden = !open;
+  $('#ol-tw').className = `codicon codicon-chevron-${open ? 'down' : 'right'}`;
+}
+$('#ol-head').onclick = () => { prefs.outline = prefs.outline === false; syncOutlineHead(); layout(); renderOutline().catch(() => {}); };
+syncOutlineHead();
+
 // ---------- parallel boot (UI/Home/Tree render immediately; Monaco hydrates asynchronously) ----------
 const earlyBoot = (async () => {
   ensureToken();
@@ -4677,6 +5088,22 @@ function startMonaco() {
       'editor.background': '#060608', 'editorGutter.background': '#060608', 'minimap.background': '#060608',
       'editorLineNumber.foreground': '#525266', 'editorLineNumber.activeForeground': '#e2e8f0', 'editor.lineHighlightBackground': '#ffffff05', 'editor.lineHighlightBorder': '#ffffff0a', 'editor.selectionBackground': '#6366f138',
     } });
+    tapLanguageFeatures();
+    for (const d of tsDefaults()) {
+      d.setCompilerOptions({ ...d.getCompilerOptions(), target: monaco.languages.typescript.ScriptTarget.ESNext, module: monaco.languages.typescript.ModuleKind.ESNext,
+        moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs, jsx: monaco.languages.typescript.JsxEmit.React, allowJs: true, esModuleInterop: true, allowNonTsExtensions: true });
+    }
+    // Go to Definition / references into another workspace file: open it as a tab
+    monaco.editor.registerEditorOpener({ openCodeEditor(_src, resource, sel) {
+      if (resource.scheme !== 'file' || !root) return false;
+      const rel = relOfUri(resource);
+      openFile(rel).then(() => {
+        if (active !== rel || !sel) return;
+        if ('startLineNumber' in sel) { editor.setSelection(sel); editor.revealRangeInCenter(sel); } else { editor.setPosition(sel); editor.revealPositionInCenter(sel); }
+        editor.focus();
+      }).catch(fail);
+      return true;
+    } });
     blankModel = monaco.editor.createModel('', 'plaintext');
     const mob = isMobileUI();
     lastMob = mob;
@@ -4686,6 +5113,9 @@ function startMonaco() {
       padding: { top: 6 }, smoothScrolling: true, cursorSmoothCaretAnimation: 'on', scrollBeyondLastLine: false, renderLineHighlight: 'all',
     });
     editor.onDidChangeCursorPosition(updateStatus);
+    editor.addAction({ id: 'webide.markdown.preview', label: 'Markdown: Open Preview to the Side', precondition: 'editorLangId == markdown', contextMenuGroupId: 'navigation', contextMenuOrder: 0, run: () => toggleMdPreview(true) });
+    const syncUnicode = () => { const l = editor.getModel()?.getLanguageId(); editor.updateOptions({ unicodeHighlight: { ambiguousCharacters: l !== 'markdown' && l !== 'plaintext' } }); };
+    editor.onDidChangeModel(syncUnicode); editor.onDidChangeModelLanguage(syncUnicode);
     editor.onDidChangeCursorSelection(() => extBus.fire('selection', {}));
     monaco.editor.onDidChangeMarkers(refreshProblemsStatus);
     $('#loading')?.remove();
