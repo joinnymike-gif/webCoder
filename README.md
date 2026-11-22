@@ -74,6 +74,7 @@ docker compose up -d --build
 #### 2. 品牌 Logo、极简首页与深空曜黑视觉风格
 - **左上角 Logo 导航**：活动栏顶部内置品牌 Logo 按钮（`#act-home`），任意工作区下点击即可切换回首页，再次点击或点击侧栏图标即可回到工作区。
 - **极简初始页**：首页 `#home` 隐藏左右侧栏，仅保留 **Open. Private. Light.（开放 · 隐私 · 轻量）** Slogan、**打开本地仓库**（`#home-open-local`）、**从 GitHub 打开**（`#home-open-github`）与快捷键指引。
+- **中英文界面一键切换**：界面右上角的 `中 | EN` 小按钮可即时切换语言（也可在命令面板运行 `View: Switch Language`），选择保存在浏览器本地；首次访问按浏览器语言自动选择。翻译只作用于界面文字（按钮、菜单、命令面板、提示、对话框），不会改动文件名、代码、搜索结果等用户内容；中文模式下命令面板支持中英文关键字过滤。
 - **移动端自适应阅读模式（竖屏 `< 768px`，或横屏手机高度 `<= 500px`）**：手机端自动切换为底部导航栏 + 左侧滑出抽屉（资源管理器 / 全文搜索 / Source Control / 快速文件跳转）与单列全屏代码视图。代码以阅读优先：默认自动换行、隐藏 Minimap / 折叠栏 / 概览标尺 / Sticky Scroll，默认只读（不弹出软键盘），点击「编辑」进入编辑、「完成」退出；Markdown 默认全屏渲染预览，可一键在「预览 / 源码」间切换，预览针对小屏优化（正文 15px、表格横向滚动且不再逐字断行、代码块通栏）；Diff 自动改为内联视图；横屏手机自动压缩顶部/底部栏高度。扩展市场与 Agent 面板在手机端隐藏。
 - **统一视觉体系**：深空曜黑（`#060608` / `#0d0d12` / `#111118`）、微网格环境光晕、毛玻璃弹窗与紫蓝青渐变高亮（`#8b5cf6` → `#3b82f6` → `#06b6d4`）。
 
@@ -196,6 +197,7 @@ Built-in zero-password abuse protection:
 #### 2. Brand Logo, Minimalist Home & Obsidian Theme
 - **Top-Left Logo Navigation**: Clicking `#act-home` in the Activity Bar switches back to the minimalist Home view from any open workspace.
 - **Focused Entry Screen**: `#home` collapses sidebars and presents the **Open. Private. Light.** slogan, **Open Local Repository** (`#home-open-local`), **Open from GitHub** (`#home-open-github`), and essential shortcuts.
+- **One-Click Chinese / English UI**: The small `中 | EN` switch in the top-right corner changes the interface language instantly (also `View: Switch Language` in the Command Palette); the choice is remembered in the browser and the first visit follows the browser language. Only UI text (buttons, menus, palette, toasts, dialogs) is translated, never file names, code, or search results; in Chinese mode the Command Palette matches both Chinese and English keywords.
 - **Responsive Mobile Reading Mode (portrait `< 768px`, or landscape phones `<= 500px` tall)**: Phones get a bottom navigation dock with a slide-over drawer (Explorer, Search, Source Control, Quick Open) and a full-width editor tuned for reading: word wrap on by default; minimap, folding, overview ruler and sticky scroll hidden; read-only by default so the on-screen keyboard stays away until you tap "编辑" (Edit). Markdown opens as a full-screen rendered preview with a one-tap Preview / Source switch, and the preview is restyled for small screens (15px body text, horizontally scrollable tables without per-character wrapping, full-bleed code blocks). Diffs switch to inline view, and landscape phones get slimmer bars. Extensions and the Agent panel are hidden on phones.
 - **Unified Visual Design**: Obsidian dark surfaces (`#060608` / `#0d0d12` / `#111118`), subtle ambient grid glow, frosted-glass dialogs, and purple-blue-cyan gradient highlights shared across the IDE and [site/launch.html](site/launch.html).
 

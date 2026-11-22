@@ -408,6 +408,13 @@
   .toast { display: flex; gap: 8px; align-items: center; max-width: 420px; padding: 10px 12px; background: #111118f2; backdrop-filter: blur(16px); border: 1px solid var(--widget-border); border-radius: 10px; box-shadow: 0 10px 30px #00000080; }
 
   /* hidden file input offscreen rather than display:none so Apple Safari allows programmatic .click() */
+  /* language switch: tiny segmented pill pinned to the top-right corner (over the tab strip's empty end) */
+  #lang-sw { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 5px); right: 8px; z-index: 45; display: flex; padding: 2px; gap: 2px; border-radius: 7px; border: 1px solid var(--border); background: #0d0d12e6; backdrop-filter: blur(8px); box-shadow: 0 2px 10px #00000066; }
+  #lang-sw button { height: 20px; min-width: 26px; padding: 0 6px; border: 0; border-radius: 5px; background: none; color: var(--dim); font: 600 11px/20px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; letter-spacing: .02em; }
+  #lang-sw button:hover { color: var(--fg); background: #ffffff10; }
+  #lang-sw button[aria-pressed="true"] { background: var(--grad); color: #fff; cursor: default; }
+  #tabs::after { content: ''; flex: none; width: 76px; } /* keep the last tab clear of the language switch */
+  #chat > .ptitle { padding-right: 80px; }
   #dir-pick { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
   .drop-folder-hover { outline: 2px dashed var(--accent); outline-offset: -6px; }
   .mob-only { display: none; }
@@ -453,6 +460,8 @@
 
     /* Editor header, tabs & diff bar */
     #tabs { height: 40px; }
+    #lang-sw { top: calc(env(safe-area-inset-top, 0px) + 7px); right: 6px; }
+    #lang-sw button { height: 22px; min-width: 28px; line-height: 22px; }
     .tab { padding: 0 6px 0 12px; font-size: 13px; }
     .tab .x { visibility: visible; }
     #edwrap.mdpv #mdpv { width: 100%; border-left: 0; } /* phone: preview covers the editor; the crumb button toggles back */
@@ -497,6 +506,7 @@
 </head>
 <body>
 <noscript><p><strong>WebIDE</strong> is a free, private, VS Code-style code editor that runs in your browser: open local folders or any public GitHub repository with no install and no sign-up. JavaScript is required to run the editor. Learn more: <a href="/en">About WebIDE</a> · <a href="/zh">中文介绍</a> · <a href="/llms.txt">llms.txt</a></p></noscript>
+<div id="lang-sw" role="group" aria-label="Language / 语言" data-i18n-skip><button type="button" data-lang="zh" lang="zh-CN" title="切换到中文">中</button><button type="button" data-lang="en" lang="en" title="Switch to English">EN</button></div>
 <div id="app">
   <nav id="activity">
     <button id="act-home" title="WebIDE Home — Open · Private · Light" aria-label="WebIDE Home">
@@ -534,7 +544,7 @@
       <p>You have not yet opened a folder.</p>
       <p><button class="btn wide" id="welcome-open">Open Folder</button></p>
       <p><button class="btn sec wide" id="welcome-clone">Clone from GitHub</button></p>
-      <p class="faint">Folders inside your home folder can be opened. Git operations use your local git &amp; GitHub credentials directly.</p>
+      <p class="faint">Open a local folder, or clone a GitHub repository (public, or private with an access token).</p>
     </div>
    </div>
    <div id="view-search" class="view" hidden>
@@ -599,16 +609,16 @@
     <div id="crumbs"></div>
     <div id="edwrap">
       <div id="ed"></div>
-      <div id="empty"><div class="wm"><span class="codicon codicon-code logo"></span><dl id="keys"></dl><div class="mob-empty-acts mob-only"><button class="btn" id="empty-browse">浏览文件目录</button><button class="btn sec" id="empty-quick">快速查找文件</button></div></div></div>
+      <div id="empty"><div class="wm"><span class="codicon codicon-code logo"></span><dl id="keys"></dl><div class="mob-empty-acts mob-only"><button class="btn" id="empty-browse">Browse Files</button><button class="btn sec" id="empty-quick">Quick Find File</button></div></div></div>
       <div id="home" hidden>
         <div class="home-in">
           <header class="home-hero">
             <h1>Open. Private. <span class="grad">Light.</span></h1>
-            <p class="home-slogan">开放 · 隐私 · 轻量</p>
+            <p class="home-slogan">Open · Private · Light</p>
           </header>
           <div class="home-actions">
-            <button class="home-btn primary" id="home-open-local"><span class="codicon codicon-folder-opened"></span><span>打开本地仓库</span></button>
-            <button class="home-btn" id="home-open-github"><span class="codicon codicon-github"></span><span>从 GitHub 打开</span></button>
+            <button class="home-btn primary" id="home-open-local"><span class="codicon codicon-folder-opened"></span><span>Open Local Repository</span></button>
+            <button class="home-btn" id="home-open-github"><span class="codicon codicon-github"></span><span>Open from GitHub</span></button>
           </div>
           <div class="home-keys" id="home-keys"></div>
           <p class="home-links"><a href="/en">About</a> · <a href="/zh" hreflang="zh-Hans">中文介绍</a> · <a href="/en#faq">FAQ</a> · <a href="https://github.com/joinnymike-gif/webCoder" target="_blank" rel="noopener">GitHub</a></p>
@@ -645,8 +655,8 @@
   <footer id="ws-bar" hidden aria-label="Open Projects Taskbar">
     <div id="ws-tasks" role="tablist"></div>
     <div id="ws-bar-acts">
-      <button class="ws-add" id="ws-add-local" title="打开本地仓库"><span class="codicon codicon-folder-opened"></span><span>本地</span></button>
-      <button class="ws-add" id="ws-add-gh" title="从 GitHub 克隆仓库"><span class="codicon codicon-github"></span><span>GitHub</span></button>
+      <button class="ws-add" id="ws-add-local" title="Open Local Repository"><span class="codicon codicon-folder-opened"></span><span>Local</span></button>
+      <button class="ws-add" id="ws-add-gh" title="Clone Repository from GitHub"><span class="codicon codicon-github"></span><span>GitHub</span></button>
     </div>
   </footer>
 
@@ -744,6 +754,209 @@ const base = p => (p || '').split(/[\\/]/).filter(Boolean).pop() || p || '';
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const icon = (name, cls = '') => el('span', `codicon codicon-${name} ${cls}`);
 const composing = e => e.isComposing || e.keyCode === 229;
+
+// ---------- UI language (English source strings + Chinese dictionary) ----------
+// Source strings stay English. A MutationObserver translates static and dynamically inserted UI text plus
+// title/placeholder/aria-label as they appear, remembering each original so switching back is lossless.
+// User content (file tree, editor, tabs, search results, terminal, previews) is never touched.
+const ZH = {
+  // shell & views
+  'About': '关于', 'About WebIDE': '关于 WebIDE', 'FAQ': '常见问题', 'Browser-Local': '浏览器本地', 'Isolated': '隔离',
+  'Explorer': '资源管理器', 'Search': '搜索', 'Source Control': '源代码管理', 'Extensions': '扩展', 'Chat': '聊天', 'Terminal': '终端',
+  'Problems': '问题', 'Outline': '大纲', 'Export ZIP': '导出 ZIP', 'Loading editor…': '正在加载编辑器…', 'Agent': 'Agent',
+  'Open · Private · Light': '开放 · 隐私 · 轻量', 'Open Local Repository': '打开本地仓库', 'Open from GitHub': '从 GitHub 打开',
+  'Local': '本地', 'Browse Files': '浏览文件目录', 'Quick Find File': '快速查找文件', 'Clone Repository from GitHub': '从 GitHub 克隆仓库',
+  'Quick Open File': '快速打开文件', 'Command Palette': '命令面板', 'Find in Files': '在文件中查找', 'Show All Commands': '显示所有命令',
+  'Go to File': '转到文件', 'Open Folder': '打开文件夹', 'Toggle Sidebar': '切换侧栏', 'Go to Line': '转到行',
+  'You have not yet opened a folder.': '尚未打开文件夹。', 'Clone from GitHub': '从 GitHub 克隆',
+  'Open a local folder, or clone a GitHub repository (public, or private with an access token).': '打开本地文件夹，或克隆 GitHub 仓库（公开仓库直接克隆，私有仓库需访问令牌）。',
+  'Open a folder to use Source Control, or clone a repository directly from GitHub.': '打开文件夹以使用源代码管理，或直接从 GitHub 克隆仓库。',
+  'Initialize Repository': '初始化仓库', 'Commit (Local)': '提交（本地）', 'Staged Changes': '暂存的更改', 'Changes': '更改',
+  'Local Snapshot History': '本地快照历史', 'recently opened': '最近打开', 'files': '文件', 'Sleeping': '休眠', 'Close Project': '关闭工程',
+  'Edit': '编辑', 'Done': '完成', 'Preview': '预览', 'Source': '源码', 'Edit this file': '编辑此文件', 'Done editing (read-only)': '完成编辑（只读）',
+  'Show Markdown source': '显示 Markdown 源码', 'Show rendered Markdown': '显示渲染后的 Markdown', 'Markdown Preview': 'Markdown 预览',
+  'Zero Server Storage': '服务端零存储',
+  'Workspaces, files, snapshots, and VS Code extensions stay 100% inside this browser profile. Server-side shell/agent execution is disabled to prevent cross-client directory access.': '工作区、文件、快照和 VS Code 扩展 100% 保存在此浏览器配置中。服务端 Shell/Agent 执行已禁用，以防止跨客户端访问目录。',
+  'Browser-Local Privacy Mode: server-side agent execution is disabled.': '浏览器本地隐私模式：已禁用服务端 Agent 执行。',
+  // titles, placeholders, aria-labels
+  'All workspaces, files & extensions live only in your browser': '所有工作区、文件与扩展都只保存在你的浏览器中', 'Browser Privacy Status': '浏览器隐私状态',
+  'Checkout Branch…': '切换分支…', 'Clear Search': '清除搜索', 'Clear Search Results': '清除搜索结果', 'Clone from GitHub (Browser IndexedDB)…': '从 GitHub 克隆（浏览器 IndexedDB）…',
+  'Close': '关闭', 'Collapse All': '全部折叠', 'Collapse Folders in Explorer': '在资源管理器中折叠文件夹', 'Commit locally and download workspace ZIP': '本地提交并下载工作区 ZIP',
+  'Commit message (⌘Enter to commit)': '提交信息（⌘Enter 提交）', 'Commit message (Ctrl+Enter to commit)': '提交信息（Ctrl+Enter 提交）', 'Export / Sync': '导出 / 同步', 'Export Workspace as ZIP': '将工作区导出为 ZIP',
+  'Extensions (VS Code Marketplace)': '扩展（VS Code 市场）', 'File encoding': '文件编码', 'Hide Panel': '隐藏面板', 'Kill Terminal': '终止终端',
+  'Match Case': '区分大小写', 'Match Whole Word': '全字匹配', 'Use Regular Expression': '使用正则表达式', 'New File…': '新建文件…', 'New Folder…': '新建文件夹…', 'New Terminal': '新建终端',
+  'Next Problem (Extension Diagnostics)': '下一个问题（扩展诊断）', 'Open Folder…': '打开文件夹…', 'Open Local Folder…': '打开本地文件夹…', 'Open Projects Taskbar': '打开工程任务栏',
+  'Pull Updates from GitHub': '从 GitHub 拉取更新', 'Refresh': '刷新', 'Refresh Explorer': '刷新资源管理器', 'Refresh Extensions': '刷新扩展',
+  'Search Extensions in Marketplace': '在市场中搜索扩展', 'Search Extensions in VS Code Marketplace': '在 VS Code 市场中搜索扩展',
+  'Search files by name, or type > for commands': '按名称搜索文件，或输入 > 执行命令', 'Select Color Theme…': '选择颜色主题…',
+  'Select End of Line Sequence': '选择行尾序列', 'Select Indentation': '选择缩进', 'Send (Enter)': '发送（Enter）', 'Source Control (Git / GitHub)': '源代码管理（Git / GitHub）',
+  'Start agent': '启动 Agent', 'Start an agent to chat': '启动 Agent 开始聊天', 'WebIDE Home': 'WebIDE 首页', 'WebIDE Home — Open · Private · Light': 'WebIDE 首页 — 开放 · 隐私 · 轻量',
+  'Hide Side Bar': '隐藏侧栏', 'Hide Chat': '隐藏聊天', 'Toggle Problems': '切换问题面板', 'Toggle Word Wrap': '切换自动换行',
+  'Open Preview to the Side': '在侧边打开预览', 'Close Preview to the Side': '关闭侧边预览', 'Switch language': '切换语言',
+  // GitHub dialog
+  'Repository (owner/repo, HTTPS, or git@github.com:...)': '仓库（owner/repo、HTTPS 或 git@github.com:...）',
+  'Branch (optional — saved locally in browser IndexedDB)': '分支（可选，保存在浏览器 IndexedDB 中）',
+  'e.g. main (leave blank for default HEAD)': '例如 main（留空则使用默认分支）', 'e.g. owner/repo or https://github.com/owner/repo.git': '例如 owner/repo 或 https://github.com/owner/repo.git',
+  'Private repository access': '私有仓库访问', 'GitHub access token — read-only is enough.': 'GitHub 访问令牌，只读权限即可。',
+  'Create a fine-grained token': '创建 Fine-grained 令牌', 'with': '，授予', 'for the repos you want.': '（限定为需要的仓库）。',
+  'Remember on this device': '在此设备上记住', 'Forget saved token': '删除已保存的令牌', 'Public repos need no token': '公开仓库无需令牌',
+  'The token stays in this browser and is sent only to api.github.com. The WebIDE server never receives it.': '令牌只保存在本浏览器中，且只发送给 api.github.com，WebIDE 服务器永远不会收到。',
+  'Cancel': '取消', 'Clone': '克隆', 'Save Remote': '保存远程', 'Saving…': '正在保存…', 'Downloading ZIP…': '正在下载 ZIP…', 'Connecting to GitHub…': '正在连接 GitHub…',
+  'Clone from GitHub (Browser-Local)': '从 GitHub 克隆（浏览器本地）', 'Connect GitHub Remote': '连接 GitHub 远程仓库',
+  'GitHub token removed from this browser.': '已从此浏览器删除 GitHub 令牌。',
+  'That does not look like a GitHub token (expected github_pat_… or ghp_…).': '这看起来不像 GitHub 令牌（应以 github_pat_… 或 ghp_… 开头）。',
+  'Could not reach api.github.com from this browser (offline, or blocked by a network filter).': '此浏览器无法连接 api.github.com（离线或被网络过滤拦截）。',
+  'GitHub rejected the access token (401: invalid or expired). Enter a new token in the GitHub dialog.': 'GitHub 拒绝了访问令牌（401：无效或已过期），请在 GitHub 对话框中输入新令牌。',
+  'Repository or branch not found on GitHub (404). Check the name, and that the token has read access to this repository (fine-grained token: Contents + Metadata, read-only).': 'GitHub 上未找到该仓库或分支（404）。请检查名称，并确认令牌对该仓库有读取权限（Fine-grained 令牌：Contents + Metadata 只读）。',
+  'GitHub API rate limit reached for this token. Try again later.': '此令牌已达到 GitHub API 调用上限，请稍后再试。',
+  'Enter a valid GitHub repository (owner/repo or https://github.com/owner/repo).': '请输入有效的 GitHub 仓库（owner/repo 或 https://github.com/owner/repo）。',
+  // command palette & menus
+  'Change End of Line Sequence (LF / CRLF)': '更改行尾序列（LF / CRLF）', 'Change GitHub Remote…': '更改 GitHub 远程…', 'Connect GitHub Remote…': '连接 GitHub 远程…',
+  'Click a color theme to apply in WebIDE:': '点击颜色主题以应用到 WebIDE：', 'Close All': '全部关闭', 'Close Others': '关闭其他', 'Close Saved': '关闭已保存', 'Close to the Right': '关闭右侧',
+  'Collapse Folders': '折叠文件夹', 'Compare': '比较', 'Convert Indentation to Spaces': '将缩进转换为空格', 'Convert Indentation to Tabs': '将缩进转换为制表符',
+  'Copy Path': '复制路径', 'Copy Relative Path': '复制相对路径', 'Delete': '删除', 'Move': '移动', 'Open': '打开', 'Open File': '打开文件', 'Rename…': '重命名…', 'Save': '保存',
+  'Explorer: Collapse Folders': '资源管理器：折叠文件夹', 'Explorer: Refresh': '资源管理器：刷新', 'File: New File…': '文件：新建文件…', 'File: New Folder…': '文件：新建文件夹…',
+  'File: Open Folder…': '文件：打开文件夹…', 'File: Reveal Active File in Explorer View': '文件：在资源管理器中显示当前文件', 'File: Save': '文件：保存', 'File: Save All': '文件：全部保存',
+  'Format Document': '格式化文档', 'Git: Checkout / Create Branch…': 'Git：切换 / 创建分支…', 'Git: Clone from GitHub…': 'Git：从 GitHub 克隆…', 'Git: Connect GitHub Remote…': 'Git：连接 GitHub 远程…',
+  'Git: Initialize Local Snapshot Repository': 'Git：初始化本地快照仓库', 'Git: Pull Updates from GitHub': 'Git：从 GitHub 拉取更新',
+  'GitHub: Forget Access Token': 'GitHub：删除访问令牌', 'GitHub: Set Access Token (Private Repositories)…': 'GitHub：设置访问令牌（私有仓库）…',
+  'Go to File…': '转到文件…', 'Go to Line/Column…': '转到行/列…', 'Go to Symbol in Editor…': '转到编辑器中的符号…', 'Local History: Find Entry to Restore…': '本地历史记录：查找要恢复的条目…',
+  'Markdown: Open Preview to the Side': 'Markdown：在侧边打开预览', 'Open Local History…': '打开本地历史记录…', 'Open on GitHub': '在 GitHub 上打开',
+  'Preferences: Color Theme': '首选项：颜色主题', 'Reveal in Explorer View': '在资源管理器中显示', 'Search: Find in Files': '搜索：在文件中查找',
+  'Stage All Changes': '暂存所有更改', 'Unstage All Changes': '取消暂存所有更改', 'Terminal: Clear': '终端：清除', 'Terminal: Create New Terminal': '终端：新建终端',
+  'Terminal: Kill the Active Terminal Instance': '终端：终止当前终端实例', 'View: Close All Editors': '视图：关闭所有编辑器', 'View: Close Editor': '视图：关闭编辑器',
+  'View: Show Explorer': '视图：显示资源管理器', 'View: Show Extensions': '视图：显示扩展', 'View: Show Home': '视图：显示首页', 'View: Show Source Control': '视图：显示源代码管理',
+  'View: Toggle Chat': '视图：切换聊天', 'View: Toggle Primary Side Bar Visibility': '视图：切换主侧栏可见性', 'View: Toggle Problems': '视图：切换问题面板',
+  'View: Toggle Terminal': '视图：切换终端', 'View: Toggle Word Wrap': '视图：切换自动换行', 'Workspace: Export Project as ZIP…': '工作区：将工程导出为 ZIP…',
+  'View: Switch Language (中文 / English)': '视图：切换语言（中文 / English）',
+  'No matching commands': '没有匹配的命令', 'No matching entries': '没有匹配的条目', 'No matching color themes installed.': '没有匹配的已安装颜色主题。', 'Open a folder to search its files.': '打开文件夹后即可搜索其文件。',
+  // extensions
+  'Install': '安装', 'Installed': '已安装', 'Installing…': '正在安装…', 'Uninstall': '卸载', 'VS Code Marketplace': 'VS Code 市场', 'No extensions found.': '未找到扩展。',
+  // editor, history, conflicts
+  'Overwrite': '覆盖', 'Overwrite with Mine': '用我的版本覆盖', 'Use Disk Version': '使用磁盘版本', 'File modified outside editor': '文件已在编辑器外被修改',
+  'Discard your changes and load the file from disk': '放弃你的更改并从磁盘加载文件', 'Edit the right side to merge, then save.': '编辑右侧进行合并，然后保存。',
+  'Restore This Version': '恢复此版本', 'Replace the editor contents with this version (undoable; save to keep it)': '用此版本替换编辑器内容（可撤销；保存后生效）',
+  'Download browser workspace as ZIP (zero server upload)': '将浏览器工作区下载为 ZIP（不上传服务器）', 'Searching…': '正在搜索…',
+  // toasts & errors
+  'Committed snapshot locally in browser IndexedDB.': '已在浏览器 IndexedDB 中本地提交快照。', 'Connect a GitHub remote first.': '请先连接 GitHub 远程仓库。',
+  'Connected GitHub remote.': '已连接 GitHub 远程仓库。', 'Could not access the clipboard.': '无法访问剪贴板。', 'Enter a commit message first.': '请先输入提交信息。',
+  'Initialize a repository snapshot first.': '请先初始化仓库快照。', 'Initialized browser-local snapshot repository.': '已初始化浏览器本地快照仓库。',
+  'No changes to commit.': '没有可提交的更改。', 'No editor is active.': '没有活动的编辑器。', 'No open project': '没有打开的工程',
+  'No problems have been detected in the open editors.': '在打开的编辑器中未检测到问题。', 'No symbols found in document.': '文档中未找到符号。', 'No uncommitted changes.': '没有未提交的更改。',
+  'Open a folder first.': '请先打开文件夹。', 'Open a folder or GitHub repo to search its files.': '打开文件夹或 GitHub 仓库后即可搜索其文件。',
+  'Open a folder or GitHub repository first.': '请先打开文件夹或 GitHub 仓库。', 'Open a project first.': '请先打开工程。',
+  'Prettier could not be loaded (offline?)': '无法加载 Prettier（是否离线？）', 'Session unauthorized.': '会话未授权。', 'The WebIDE server is not reachable.': '无法连接 WebIDE 服务器。',
+  'Auto Save on — files save 1s after you stop typing': '自动保存已开启：停止输入 1 秒后保存', 'Auto Save off': '自动保存已关闭',
+  'Browser folder permission was declined. Re-open the folder or grant access when prompted.': '浏览器文件夹权限被拒绝。请重新打开文件夹，或在提示时授予访问权限。',
+  'Cannot move a folder inside itself': '不能把文件夹移动到它自身内部', 'Target already exists': '目标已存在',
+  'Local folder handle': '本地目录句柄', 'Browser IndexedDB': '浏览器 IndexedDB', '— hibernated, click to wake': '— 休眠中，点击唤醒', '— running': '— 当前运行',
+};
+const ZH_RE = [
+  [/^Downloading (\d+)\/(\d+)…$/, '正在下载 $1/$2…'],
+  [/^Cloned (private repo )?(.+?) \((\d+) files\) strictly into browser IndexedDB\.(?: (\d+) oversized file\(s\) skipped\.)?$/, (_, pr, s, n, k) => `已将${pr ? '私有仓库 ' : ' '}${s} 克隆到浏览器 IndexedDB（${n} 个文件）。${k ? `跳过了 ${k} 个超大文件。` : ''}`],
+  [/^Pulled latest snapshot from (.+) into browser storage\.$/, '已从 $1 拉取最新快照到浏览器存储。'],
+  [/^Exported (\d+) files to (.+)\.$/, '已导出 $1 个文件到 $2。'],
+  [/^Applied theme "(.+)"\.$/, '已应用主题“$1”。'],
+  [/^Uninstalled (.+)\.$/, '已卸载 $1。'],
+  [/^Switched local branch label to (.+)\.$/, '已将本地分支标签切换为 $1。'],
+  [/^(.+) was not found as a public repository\. If it is private, add a GitHub access token in this dialog\.$/, '未找到公开仓库 $1。如果它是私有仓库，请在此对话框中添加 GitHub 访问令牌。'],
+  [/^(.+) is private: add a GitHub access token to pull\.$/, '$1 是私有仓库：请添加 GitHub 访问令牌后再拉取。'],
+  [/^File: Toggle Auto Save \(now (on|off)\)$/, (_, v) => `文件：切换自动保存（当前${v === 'on' ? '已开启' : '已关闭'}）`],
+  [/^Saved token (\S+) in use — paste a new one to replace$/, '正在使用已保存的令牌 $1，粘贴新令牌可替换'],
+  [/^Token (\S+)$/, '令牌 $1'],
+  [/^Indent Using Spaces: (\d+)$/, '使用空格缩进：$1'],
+  [/^Indent Using Tabs: Tab Size (\d+)$/, '使用制表符缩进：宽度 $1'],
+  [/^GitHub refused the request \(403\): (.*)$/, 'GitHub 拒绝了请求（403）：$1'],
+  [/^GitHub API error (\d+)(.*)$/, 'GitHub API 错误 $1$2'],
+  [/^Importing (.+) \((\d+) files\)…$/, '正在导入 $1（$2 个文件）…'],
+  [/^No local history for (.+) yet — versions are recorded when you save\.$/, '$1 暂无本地历史记录，保存时会记录版本。'],
+  [/^Restored (.+) to (.+)\. Save to keep it\.$/, '已将 $1 恢复到 $2。保存后生效。'],
+  [/^(.+) is a binary file and can't be opened in the text editor\.$/, '$1 是二进制文件，无法在文本编辑器中打开。'],
+  [/^(.+) is larger than 5 MB and can't be opened\.$/, '$1 超过 5 MB，无法打开。'],
+  [/^File not found: (.+)$/, '文件未找到：$1'],
+  [/^"(.+)" already exists$/, '“$1”已存在'],
+  [/^\+ Create branch "(.+)"$/, '+ 创建分支“$1”'],
+  [/^Toggle Word Wrap \((on|off)\)$/, (_, v) => `切换自动换行（当前${v === 'on' ? '开启' : '关闭'}）`],
+];
+// Chinese for an English UI string, or null when it is not a known UI string.
+function zhOf(s) {
+  const out = zhRaw(s);
+  return out && out.replace(/^\s+(?=[，。（）：、])/, '').replace(/(?<=[，。（）：、])\s+$/, ''); // no stray spaces around CJK punctuation
+}
+function zhRaw(s) {
+  if (typeof s !== 'string' || !s) return null;
+  const k = s.trim();
+  if (!k || !/[A-Za-z]/.test(k)) return null;
+  if (Object.hasOwn(ZH, k)) return s.replace(k, ZH[k]);
+  for (const [re, rep] of ZH_RE) if (re.test(k)) return s.replace(k, k.replace(re, rep));
+  const m = k.match(/^(.+?) \(([^()]+)\)$/); // "Label (⌘B)": keep the shortcut
+  if (m && Object.hasOwn(ZH, m[1])) return s.replace(k, `${ZH[m[1]]} (${m[2]})`);
+  return null;
+}
+let LANG = 'en';
+try { LANG = localStorage.webideLang || ((navigator.languages || [navigator.language]).some(l => /^zh\b/i.test(l || '')) ? 'zh' : 'en'); } catch { /* storage unavailable */ }
+if (LANG !== 'zh') LANG = 'en';
+const t = s => (LANG === 'zh' && zhOf(s)) || s;
+const I18N_SKIP = '[class*="monaco"], .xterm, #tree, #tabs, .cr-path, #outline li:not(.ol-empty), #sr-res, #probbody .pmsg, .edlg-readme, iframe, script, style, textarea, code, pre, [data-i18n-skip]';
+const I18N_ATTRS = ['title', 'placeholder', 'aria-label'];
+const i18nOrig = new WeakMap(); // text node -> English original
+function i18nText(n) {
+  let orig = i18nOrig.get(n);
+  if (orig === undefined || (n.data !== orig && n.data !== zhOf(orig))) {
+    orig = n.data; // first sight, or the app replaced the text since
+    if (zhOf(orig) == null) { i18nOrig.delete(n); return; }
+    i18nOrig.set(n, orig);
+  }
+  const want = LANG === 'zh' ? zhOf(orig) : orig;
+  if (n.data !== want) n.data = want;
+}
+function i18nAttr(e, a) {
+  const v = e.getAttribute(a), key = 'i18n' + a.replace('-', '');
+  if (v == null) return;
+  let orig = e.dataset[key];
+  if (orig === undefined || (v !== orig && v !== zhOf(orig))) {
+    orig = v;
+    if (zhOf(orig) == null) { delete e.dataset[key]; return; }
+    e.dataset[key] = orig;
+  }
+  const want = LANG === 'zh' ? zhOf(orig) : orig;
+  if (v !== want) e.setAttribute(a, want);
+}
+function i18nWalk(rootNode) {
+  if (rootNode.nodeType === 3) { if (!rootNode.parentElement?.closest(I18N_SKIP)) i18nText(rootNode); return; }
+  if (rootNode.nodeType !== 1 || rootNode.closest(I18N_SKIP)) return;
+  const w = document.createTreeWalker(rootNode, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.nodeType === 1 && n.matches(I18N_SKIP) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  });
+  for (let n = rootNode; n; n = w.nextNode()) {
+    if (n.nodeType === 3) i18nText(n);
+    else for (const a of I18N_ATTRS) if (n.hasAttribute(a)) i18nAttr(n, a);
+  }
+}
+const i18nObs = new MutationObserver(recs => {
+  for (const r of recs) {
+    if (r.type === 'attributes') { if (!r.target.closest(I18N_SKIP)) i18nAttr(r.target, r.attributeName); continue; }
+    if (r.target.nodeType === 1 && r.target.closest(I18N_SKIP)) continue; // Monaco/xterm churn: cheap early out
+    for (const n of r.addedNodes) i18nWalk(n);
+  }
+});
+function applyLang() {
+  document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
+  i18nWalk(document.body);
+  for (const b of document.querySelectorAll('#lang-sw button')) b.setAttribute('aria-pressed', String(b.dataset.lang === LANG));
+}
+function setLang(l) {
+  LANG = l === 'zh' ? 'zh' : 'en';
+  try { localStorage.webideLang = LANG; } catch { /* storage unavailable */ }
+  applyLang();
+  // Views that bake t() into their data rather than DOM text
+  renderProjectBar(); renderCrumbs();
+  if ($('#qo').open) qoRender();
+}
+applyLang();
+i18nObs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: I18N_ATTRS });
+for (const b of document.querySelectorAll('#lang-sw button')) b.onclick = () => setLang(b.dataset.lang);
+
 const safeUid = (len = 8) => (typeof crypto?.randomUUID === 'function'
   ? crypto.randomUUID().replace(/-/g, '')
   : [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('')
@@ -800,7 +1013,7 @@ const fail = e => { toast(e?.message || String(e), 'error'); };
 const MOBILE_MQ = '(max-width: 767px), (pointer: coarse) and (max-height: 500px)';
 const isMobileUI = () => window.matchMedia(MOBILE_MQ).matches;
 // Phones get a reading-first editor: wrapped lines, no minimap/folding/rulers, and read-only (no on-screen keyboard)
-// until the user taps "编辑". Desktop values are Monaco's defaults so switching back restores them.
+// until the user taps "Edit". Desktop values are Monaco's defaults so switching back restores them.
 let mobEdit = false;
 const wrapOn = (mob = isMobileUI()) => mob ? prefs.wrapMob !== false : !!prefs.wrap;
 function edLayoutOpts(mob = isMobileUI()) {
@@ -960,7 +1173,7 @@ $('#st-agent').onclick = () => toggle('chat');
 layout();
 $('#keys').append(...[['Show All Commands', K.cmd], ['Go to File', K.quick], ['Find in Files', K.find], ['Open Folder', K.open], ['Toggle Sidebar', K.side]]
   .flatMap(([label, k]) => { const dd = el('dd'); dd.append(...keyCaps(k)); return [el('dt', '', label), dd]; }));
-$('#home-keys').append(...[['打开本地仓库', K.open], ['快速打开文件', K.quick], ['命令面板', K.cmd], ['全局搜索', K.find], ['源代码管理', K.git], ['终端', K.term]].map(([label, k]) => {
+$('#home-keys').append(...[['Open Local Repository', K.open], ['Quick Open File', K.quick], ['Command Palette', K.cmd], ['Find in Files', K.find], ['Source Control', K.git], ['Terminal', K.term]].map(([label, k]) => {
   const s = el('span'); s.append(el('span', '', label), ...keyCaps(k)); return s;
 }));
 $$('kbd.mod').forEach(k => k.textContent = MOD);
@@ -1611,13 +1824,13 @@ function renderProjectBar() {
     const item = el('div', 'ws-task' + (on ? ' on' : ''));
     item.setAttribute('role', 'tab');
     item.setAttribute('aria-selected', String(on));
-    item.title = `${p.name} (${p.kind === 'gh' ? 'GitHub · IndexedDB' : p.kind === 'fsa' ? '本地目录句柄' : '浏览器 IndexedDB'})${p.root !== root ? ' — 休眠中，点击唤醒' : ' — 当前运行'}`;
+    item.title = `${p.name} (${p.kind === 'gh' ? 'GitHub · IndexedDB' : t(p.kind === 'fsa' ? 'Local folder handle' : 'Browser IndexedDB')})${t(p.root !== root ? ' — hibernated, click to wake' : ' — running')}`;
     const dot = el('span', 'ws-dot');
     const name = el('span', 'ws-name', p.name);
     const nodes = [dot, name];
     if (projDirty(p)) nodes.push(el('span', 'ws-dirty'));
-    if (p.root !== root) nodes.push(el('span', 'ws-sleep', '休眠'));
-    const x = el('button', 'ws-x'); x.title = '关闭工程'; x.append(icon('close'));
+    if (p.root !== root) nodes.push(el('span', 'ws-sleep', 'Sleeping'));
+    const x = el('button', 'ws-x'); x.title = 'Close Project'; x.append(icon('close'));
     x.onclick = e => { e.stopPropagation(); closeProject(p.root).catch(fail); };
     nodes.push(x);
     item.append(...nodes);
@@ -2141,12 +2354,12 @@ function renderCrumbs() {
     b.onclick = run; acts.append(b); return b;
   };
   if (mob) {
-    // Phone toolbar: Markdown reads as rendered text by default; code reads wrapped and read-only until "编辑".
+    // Phone toolbar: Markdown reads as rendered text by default; code reads wrapped and read-only until "Edit".
     if (!(md && mdOn)) {
       act('cr-icon' + (wrapOn() ? ' on' : ''), 'word-wrap', '', `Toggle Word Wrap (${wrapOn() ? 'on' : 'off'})`, toggleWrap);
-      act(mobEdit ? 'on' : '', mobEdit ? 'check' : 'edit', mobEdit ? '完成' : '编辑', mobEdit ? 'Done editing (read-only)' : 'Edit this file', () => { mobEdit = !mobEdit; applyEdMode(); renderCrumbs(); if (mobEdit) editor?.focus(); });
+      act(mobEdit ? 'on' : '', mobEdit ? 'check' : 'edit', mobEdit ? 'Done' : 'Edit', mobEdit ? 'Done editing (read-only)' : 'Edit this file', () => { mobEdit = !mobEdit; applyEdMode(); renderCrumbs(); if (mobEdit) editor?.focus(); });
     }
-    if (md) act(mdOn ? '' : 'on', mdOn ? 'code' : 'open-preview', mdOn ? '源码' : '预览', mdOn ? 'Show Markdown source' : 'Show rendered Markdown', () => toggleMdPreview());
+    if (md) act(mdOn ? '' : 'on', mdOn ? 'code' : 'open-preview', mdOn ? 'Source' : 'Preview', mdOn ? 'Show Markdown source' : 'Show rendered Markdown', () => toggleMdPreview());
   } else if (md) {
     act('md-pv-btn' + (mdOn ? ' on' : ''), mdOn ? 'close' : 'open-preview', '', `${mdOn ? 'Close' : 'Open'} Preview to the Side (${K.mdpv})`, () => toggleMdPreview());
   }
@@ -2938,6 +3151,7 @@ const COMMANDS = () => [
   ]),
   { label: 'Git: Clone from GitHub…', run: () => openGitDialog('clone') },
   { label: 'Git: Connect GitHub Remote…', run: () => openGitDialog('remote') },
+  { label: 'View: Switch Language (中文 / English)', run: () => setLang(LANG === 'zh' ? 'en' : 'zh') },
   { label: 'GitHub: Set Access Token (Private Repositories)…', run: () => { openGitDialog('clone'); $('#gd-auth').open = true; } },
   ...(ghToken ? [{ label: 'GitHub: Forget Access Token', run: () => { setGhToken(''); toast('GitHub token removed from this browser.'); } }] : []),
   { label: 'Git: Checkout / Create Branch…', run: gitBranchPicker },
@@ -3002,7 +3216,7 @@ function qoRender() {
     if (!rows.length) msg = 'No matching entries';
   } else if (v.startsWith('>')) {
     const q = v.slice(1).trim().toLowerCase();
-    rows = COMMANDS().map(c => ({ ...c, m: q ? fuzzy(q, c.label) : { score: 0, pos: [] } })).filter(c => c.m)
+    rows = COMMANDS().map(c => { const label = t(c.label); return { ...c, label, m: !q ? { score: 0, pos: [] } : fuzzy(q, label) || (label !== c.label && fuzzy(q, c.label) ? { score: 0, pos: [] } : null) }; }).filter(c => c.m)
       .sort((a, b) => b.m.score - a.m.score).map(c => ({ ...c, pos: c.m.pos }));
     if (!rows.length) msg = 'No matching commands';
   } else if (!root) msg = 'Open a folder to search its files.';
