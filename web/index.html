@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WebIDE</title>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <style>
   /* OpenIDE Obsidian & Edge-Glow palette (inspired by openide.in) */
   :root {
@@ -341,7 +343,7 @@
   .qp-foot .keys { display: flex; gap: 12px; flex-wrap: wrap; }
 
   /* toasts */
-  #toasts { position: fixed; right: 12px; bottom: 34px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
+  #toasts { position: fixed; right: 12px; bottom: 64px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
   .toast { display: flex; gap: 8px; align-items: center; max-width: 420px; padding: 10px 12px; background: #111118f2; backdrop-filter: blur(16px); border: 1px solid var(--widget-border); border-radius: 10px; box-shadow: 0 10px 30px #00000080; }
 
   @media (max-width: 700px) { #activity, .sash { display: none; } #app { grid-template-columns: 0 0 0 minmax(0, 1fr) 0 0 !important; } #side, #chat { display: none; } }
@@ -553,11 +555,8 @@
 </dialog>
 <div id="toasts"></div>
 
-<!-- xterm before Monaco's AMD loader: with `define` present, these UMD bundles register as anonymous modules instead of globals -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
-<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js"></script>
+<!-- xterm.js loads lazily when Terminal is opened so initial IDE boot never blocks on it -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js" defer></script>
 <script>
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -775,7 +774,7 @@ async function inflateRawBytes(bytes) {
   const ab = await new Response(ds.readable).arrayBuffer();
   return new Uint8Array(ab);
 }
-async function unzipBytes(buf, { maxBytes = 150 * 1024 * 1024, maxFiles = 10000 } = {}) {
+async function unzipBytes(buf, { maxBytes = 150 * 1024 * 1024, maxFiles = 10000, filter = null, concurrency = 24 } = {}) {
   const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
   const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
   let eocd = -1;
@@ -787,7 +786,7 @@ async function unzipBytes(buf, { maxBytes = 150 * 1024 * 1024, maxFiles = 10000 
   const cdSize = dv.getUint32(eocd + 12, true), cdOff = dv.getUint32(eocd + 16, true);
   if (entries > maxFiles || cdOff + cdSize > u8.length) throw new Error('Invalid or oversized archive directory');
   const dec = new TextDecoder('utf-8', { fatal: false });
-  const files = new Map();
+  const files = new Map(), deflateTasks = [];
   let off = cdOff, total = 0;
   for (let i = 0; i < entries; i++) {
     if (off + 46 > u8.length || dv.getUint32(off, true) !== 0x02014b50) break;
@@ -799,6 +798,7 @@ async function unzipBytes(buf, { maxBytes = 150 * 1024 * 1024, maxFiles = 10000 
     const name = dec.decode(u8.subarray(off + 46, off + 46 + nameLen)).replace(/\\/g, '/');
     off += 46 + nameLen + extLen + cmtLen;
     if (!name || name.endsWith('/') || name.startsWith('/') || name.split('/').some(s => s === '..')) continue;
+    if (filter && !filter(name)) continue;
     total += uncompSize;
     if (total > maxBytes) throw new Error('Extracted archive exceeds size limit');
     if (localOff + 30 > u8.length || dv.getUint32(localOff, true) !== 0x04034b50) continue;
@@ -807,7 +807,12 @@ async function unzipBytes(buf, { maxBytes = 150 * 1024 * 1024, maxFiles = 10000 
     if (dataStart + compSize > u8.length) throw new Error('Truncated ZIP entry: ' + name);
     const slice = u8.subarray(dataStart, dataStart + compSize);
     if (method === 0) files.set(name, new Uint8Array(slice));
-    else if (method === 8) files.set(name, await inflateRawBytes(slice));
+    else if (method === 8) deflateTasks.push([name, slice]);
+  }
+  for (let i = 0; i < deflateTasks.length; i += concurrency) {
+    const batch = deflateTasks.slice(i, i + concurrency);
+    const out = await Promise.all(batch.map(([, slice]) => inflateRawBytes(slice)));
+    for (let j = 0; j < batch.length; j++) files.set(batch[j][0], out[j]);
   }
   return files;
 }
@@ -880,13 +885,25 @@ async function fsaResolveParent(rootHandle, rel, createDirs = false) {
   for (const seg of parts) cur = await cur.getDirectoryHandle(seg, { create: createDirs });
   return { parent: cur, name };
 }
-async function ensureProjCache(proj) {
+async function ensureProjIndex(proj) {
   if (!proj || proj.kind === 'fsa') return null;
-  if (!proj._fileMap) {
-    const list = await dbByProj('files', proj.id);
-    proj._fileMap = new Map(list.map(r => [r.path, r]));
+  if (proj.fileMeta) return proj.fileMeta;
+  // One-time migration for projects created before fileMeta/snapMeta index existed
+  const [fList, sList] = await Promise.all([dbByProj('files', proj.id), dbByProj('snapshots', proj.id)]);
+  const fileMeta = {}, snapMeta = {};
+  proj._fileCache ??= new Map();
+  for (const r of fList) {
+    const b = r.content instanceof Uint8Array ? r.content : textEnc.encode(String(r.content || ''));
+    fileMeta[r.path] = r.etag || bytesEtag(b);
+    proj._fileCache.set(r.path, b);
   }
-  return proj._fileMap;
+  for (const s of sList) {
+    const b = s.content instanceof Uint8Array ? s.content : textEnc.encode(String(s.content || ''));
+    snapMeta[s.path] = s.etag || bytesEtag(b);
+  }
+  proj.fileMeta = fileMeta; proj.snapMeta = snapMeta;
+  await dbPut('projects', serializeProjMeta(proj));
+  return proj.fileMeta;
 }
 async function vfsListDir(proj, dirRel = '') {
   if (!proj) return [];
@@ -899,10 +916,10 @@ async function vfsListDir(proj, dirRel = '') {
       if (!HIDDEN.has(name)) items.push({ name, dir: h.kind === 'directory' });
     }
   } else {
-    const map = await ensureProjCache(proj);
+    const meta = await ensureProjIndex(proj);
     const prefix = dirRel ? dirRel + '/' : '';
     const seen = new Map();
-    for (const rel of map.keys()) {
+    for (const rel of Object.keys(meta)) {
       if (!rel.startsWith(prefix)) continue;
       const rest = rel.slice(prefix.length);
       if (!rest) continue;
@@ -928,12 +945,18 @@ async function vfsReadBytes(proj, rel) {
     const { parent, name } = await fsaResolveParent(proj.handle, rel, false);
     const fh = await parent.getFileHandle(name);
     const f = await fh.getFile();
-    return new Uint8Array(await f.arrayBuffer());
+    const u8 = new Uint8Array(await f.arrayBuffer());
+    proj._fsaMeta ??= new Map();
+    proj._fsaMeta.set(rel, { size: f.size, mtime: f.lastModified, etag: bytesEtag(u8) });
+    return u8;
   }
-  const map = await ensureProjCache(proj);
-  const rec = map.get(rel);
+  proj._fileCache ??= new Map();
+  if (proj._fileCache.has(rel)) return proj._fileCache.get(rel);
+  const rec = await dbGet('files', fKey(proj.id, rel));
   if (!rec) throw Object.assign(new Error(`File not found: ${rel}`), { status: 404 });
-  return rec.content instanceof Uint8Array ? rec.content : textEnc.encode(String(rec.content || ''));
+  const u8 = rec.content instanceof Uint8Array ? rec.content : textEnc.encode(String(rec.content || ''));
+  proj._fileCache.set(rel, u8);
+  return u8;
 }
 async function vfsReadFile(proj, rel) {
   return decodeTextBytes(await vfsReadBytes(proj, rel), rel);
@@ -954,18 +977,22 @@ async function vfsWriteFile(proj, rel, textOrBytes, { create = false, expectedEt
     const fh = await parent.getFileHandle(name, { create: true });
     const w = await fh.createWritable();
     await w.write(bytes); await w.close();
+    const f = await fh.getFile();
+    proj._fsaMeta ??= new Map();
+    proj._fsaMeta.set(rel, { size: f.size, mtime: f.lastModified, etag: nextEtag });
     return nextEtag;
   }
-  const map = await ensureProjCache(proj);
-  const existing = map.get(rel);
-  if (create && existing) throw Object.assign(new Error(`"${base(rel)}" already exists`), { status: 409 });
-  if (!force && expectedEtag && existing) {
-    const curBytes = existing.content instanceof Uint8Array ? existing.content : textEnc.encode(String(existing.content || ''));
-    if (bytesEtag(curBytes) !== expectedEtag) throw Object.assign(new Error('File modified outside editor'), { status: 412 });
+  const meta = await ensureProjIndex(proj);
+  const existingEtag = meta[rel];
+  if (create && existingEtag !== undefined) throw Object.assign(new Error(`"${base(rel)}" already exists`), { status: 409 });
+  if (!force && expectedEtag && existingEtag && existingEtag !== expectedEtag) {
+    throw Object.assign(new Error('File modified outside editor'), { status: 412 });
   }
-  const rec = { key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: bytes, mtime: Date.now() };
-  map.set(rel, rec);
-  await dbPut('files', rec);
+  const rec = { key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: bytes, etag: nextEtag, mtime: Date.now() };
+  meta[rel] = nextEtag;
+  proj._fileCache ??= new Map();
+  proj._fileCache.set(rel, bytes);
+  await Promise.all([dbPut('files', rec), dbPut('projects', serializeProjMeta(proj))]);
   return nextEtag;
 }
 async function vfsMkdir(proj, rel) {
@@ -978,9 +1005,9 @@ async function vfsMkdir(proj, rel) {
     await parent.getDirectoryHandle(name, { create: true });
     return;
   }
-  const map = await ensureProjCache(proj);
+  const meta = await ensureProjIndex(proj);
   const folders = new Set(proj.folders || []);
-  if (folders.has(rel) || [...map.keys()].some(k => k === rel || k.startsWith(rel + '/'))) {
+  if (folders.has(rel) || Object.keys(meta).some(k => k === rel || k.startsWith(rel + '/'))) {
     throw Object.assign(new Error(`"${base(rel)}" already exists`), { status: 409 });
   }
   folders.add(rel);
@@ -1021,19 +1048,24 @@ async function vfsRename(proj, from, to) {
       await w.write(await f.arrayBuffer()); await w.close();
     }
     await src.parent.removeEntry(src.name, { recursive: true });
+    proj._fsaMeta = null;
     return;
   }
-  const map = await ensureProjCache(proj);
-  const hasCollision = map.has(to) || [...map.keys()].some(k => k.startsWith(to + '/')) || (proj.folders || []).includes(to);
+  const meta = await ensureProjIndex(proj);
+  const paths = Object.keys(meta);
+  const hasCollision = (to in meta) || paths.some(k => k.startsWith(to + '/')) || (proj.folders || []).includes(to);
   if (hasCollision) throw Object.assign(new Error('Target already exists'), { status: 409 });
-  const toMove = [...map.entries()].filter(([k]) => k === from || k.startsWith(from + '/'));
-  for (const [k, rec] of toMove) {
+  const matching = paths.filter(k => k === from || k.startsWith(from + '/'));
+  for (const k of matching) {
     const nk = k === from ? to : to + k.slice(from.length);
-    await dbDel('files', rec.key);
-    map.delete(k);
-    const nr = { key: fKey(proj.id, nk), projectId: proj.id, path: nk, content: rec.content, mtime: Date.now() };
-    map.set(nk, nr);
-    await dbPut('files', nr);
+    const bytes = await vfsReadBytes(proj, k);
+    const etag = meta[k] || bytesEtag(bytes);
+    await dbDel('files', fKey(proj.id, k));
+    delete meta[k];
+    meta[nk] = etag;
+    proj._fileCache?.delete(k);
+    proj._fileCache?.set(nk, bytes);
+    await dbPut('files', { key: fKey(proj.id, nk), projectId: proj.id, path: nk, content: bytes, etag, mtime: Date.now() });
   }
   proj.folders = (proj.folders || []).map(f => (f === from ? to : f.startsWith(from + '/') ? to + f.slice(from.length) : f));
   await dbPut('projects', serializeProjMeta(proj));
@@ -1043,11 +1075,16 @@ async function vfsDelete(proj, rel) {
     await ensureFsaPerm(proj.handle, true);
     const { parent, name } = await fsaResolveParent(proj.handle, rel, false);
     await parent.removeEntry(name, { recursive: true });
+    proj._fsaMeta = null;
     return;
   }
-  const map = await ensureProjCache(proj);
-  for (const [k, rec] of [...map.entries()]) {
-    if (k === rel || k.startsWith(rel + '/')) { map.delete(k); await dbDel('files', rec.key); }
+  const meta = await ensureProjIndex(proj);
+  for (const k of Object.keys(meta)) {
+    if (k === rel || k.startsWith(rel + '/')) {
+      delete meta[k];
+      proj._fileCache?.delete(k);
+      await dbDel('files', fKey(proj.id, k));
+    }
   }
   proj.folders = (proj.folders || []).filter(f => f !== rel && !f.startsWith(rel + '/'));
   await dbPut('projects', serializeProjMeta(proj));
@@ -1069,8 +1106,8 @@ async function vfsAllFiles(proj, { skipHeavy = true, limit = 20000 } = {}) {
     };
     await walk(proj.handle, '');
   } else {
-    const map = await ensureProjCache(proj);
-    for (const rel of map.keys()) {
+    const meta = await ensureProjIndex(proj);
+    for (const rel of Object.keys(meta)) {
       if (skipHeavy && rel.split('/').some(s => s === 'node_modules' || HIDDEN.has(s))) continue;
       files.push(rel);
       if (files.length >= limit) { truncated = true; break; }
@@ -1115,20 +1152,27 @@ function pickLocalFolderViaInput() {
     inp.value = '';
     const onDone = async () => {
       inp.removeEventListener('change', onDone);
-      const list = [...(inp.files || [])];
+      const list = [...(inp.files || [])].filter(f => {
+        const parts = (f.webkitRelativePath || f.name).split('/').slice(1);
+        return parts.length && f.size <= 10 * 1024 * 1024 && !parts.some(s => HIDDEN.has(s) || s === 'node_modules');
+      });
       if (!list.length) return resolve(null);
       const folderName = (list[0].webkitRelativePath || list[0].name).split('/')[0] || 'local-folder';
       const id = 'idb:' + folderName + ':' + crypto.randomUUID().slice(0, 6);
-      const proj = { id, name: folderName, kind: 'idb', folders: [], staged: [], commits: [], createdAt: Date.now() };
-      const records = [];
-      for (const f of list) {
-        const parts = (f.webkitRelativePath || f.name).split('/');
-        const rel = parts.length > 1 ? parts.slice(1).join('/') : f.name;
-        if (!rel || rel.split('/').some(s => HIDDEN.has(s))) continue;
-        records.push({ key: fKey(id, rel), projectId: id, path: rel, content: new Uint8Array(await f.arrayBuffer()), mtime: f.lastModified || Date.now() });
+      const fileMeta = {}, records = [];
+      for (let i = 0; i < list.length; i += 24) {
+        const chunk = list.slice(i, i + 24);
+        const bufs = await Promise.all(chunk.map(f => f.arrayBuffer()));
+        for (let j = 0; j < chunk.length; j++) {
+          const f = chunk[j], parts = (f.webkitRelativePath || f.name).split('/');
+          const rel = parts.length > 1 ? parts.slice(1).join('/') : f.name;
+          const u8 = new Uint8Array(bufs[j]), etag = bytesEtag(u8);
+          fileMeta[rel] = etag;
+          records.push({ key: fKey(id, rel), projectId: id, path: rel, content: u8, etag, mtime: f.lastModified || Date.now() });
+        }
       }
-      await dbPutMany('files', records);
-      await dbPut('projects', serializeProjMeta(proj));
+      const proj = { id, name: folderName, kind: 'idb', folders: [], fileMeta, snapMeta: {}, staged: [], commits: [], createdAt: Date.now() };
+      await Promise.all([dbPutMany('files', records), dbPut('projects', serializeProjMeta(proj))]);
       resolve(proj);
     };
     inp.addEventListener('change', onDone, { once: true });
@@ -1165,15 +1209,17 @@ const expanded = new Set();
 let selected = null; // { rel, dir } last clicked row in the explorer
 const serializeProjMeta = p => ({
   id: p.id || p.root, root: p.root, name: p.name, kind: p.kind || 'idb',
-  handle: p.handle || null, remote: p.remote || null, branch: p.branch || 'main',
-  isRepo: !!p.isRepo, folders: p.folders || [], staged: p.staged || [], commits: p.commits || [],
+  handle: p.handle || null, remote: p.remote || null, branch: p.branch || 'main', branches: p.branches || ['main'],
+  isRepo: !!p.isRepo, folders: p.folders || [], fileMeta: p.fileMeta || null, snapMeta: p.snapMeta || null,
+  staged: p.staged || [], commits: p.commits || [],
 });
 const emptyProj = (id, extra = {}) => ({
   id, root: id, name: extra.name || base(id), kind: extra.kind || 'idb', handle: extra.handle || null,
-  remote: extra.remote || null, branch: extra.branch || 'main', isRepo: !!extra.isRepo,
-  folders: extra.folders || [], staged: extra.staged || [], commits: extra.commits || [],
+  remote: extra.remote || null, branch: extra.branch || 'main', branches: extra.branches || [extra.branch || 'main'],
+  isRepo: !!extra.isRepo, folders: extra.folders || [], fileMeta: extra.fileMeta || null, snapMeta: extra.snapMeta || null,
+  staged: extra.staged || [], commits: extra.commits || [],
   active: null, tabs: [], expanded: [], selected: null, recent: [],
-  terms: [], termOnId: null, panelOpen: false, _fileMap: null,
+  terms: [], termOnId: null, panelOpen: false, _fileCache: null, _fsaMeta: null,
 });
 const activeProj = () => projects.get(root) || null;
 const persistProjectOrder = async () => {
@@ -1362,7 +1408,8 @@ function hibernateCurrent(projRoot = root) {
   $('#sr-res').replaceChildren(); $('#sr-msg').textContent = ''; sr.last = null;
   $('#git-list').replaceChildren(); gitState = null; gitCommits = [];
   qo.files = []; qo.truncated = false; qo.loaded = false;
-  curProj._fileMap = null; // drop in-memory file cache so hibernated projects consume zero RAM
+  curProj._fileCache = null; // drop in-memory file cache so hibernated projects consume zero RAM
+  curProj._fsaMeta = null;
   Object.assign(curProj, {
     root: projRoot, active: prevActive, tabs: tabSnaps, expanded: [...expanded], selected,
     recent: [...recent], terms: termSnaps, termOnId, panelOpen,
@@ -1396,11 +1443,10 @@ async function restoreProject(projRoot) {
   document.title = root ? `${snap.name} — WebIDE` : 'WebIDE';
   sr.last = null; $('#sr-res').replaceChildren(); $('#sr-msg').textContent = '';
   showHome(false);
-  await activate(snap.active);
-  await renderTree();
-  scheduleGitRefresh(0);
   renderProjectBar();
   persistProjectOrder().catch(() => {});
+  await Promise.all([activate(snap.active), renderTree()]);
+  scheduleGitRefresh(120);
 }
 
 async function switchProject(targetRoot) {
@@ -1460,10 +1506,12 @@ async function closeProject(projRoot) {
   return true;
 }
 
-async function loadRoot() {
-  const savedProjs = await dbAll('projects').catch(() => []);
-  const orderMeta = await dbGet('meta', 'projects').catch(() => null);
-  const activeMeta = await dbGet('meta', 'activeProject').catch(() => null);
+async function loadRoot(prefetched = null) {
+  const [savedProjs, orderMeta, activeMeta] = prefetched || await Promise.all([
+    dbAll('projects').catch(() => []),
+    dbGet('meta', 'projects').catch(() => null),
+    dbGet('meta', 'activeProject').catch(() => null),
+  ]);
   projects.clear();
   const byId = new Map(savedProjs.map(p => [p.id, p]));
   const ids = orderMeta?.value?.length ? orderMeta.value.filter(id => byId.has(id)) : [...byId.keys()];
@@ -1520,20 +1568,21 @@ async function readFile(rel) {
 const fileText = t => (t.model ? t.model.getValue(monaco.editor.EndOfLinePreference.TextDefined, true) : (t.text ?? '')); // keeps the file's own EOL + BOM
 
 function newModel(rel, text, etag = null) {
+  if (!editor) return { model: null, text, saved: 0, etag, view: null, bom: text.charCodeAt(0) === 0xfeff, preview: false, reloading: false, dirty: false };
   const model = monaco.editor.createModel(text, undefined, monaco.Uri.file('/' + rel));
   const t = { model, saved: model.getAlternativeVersionId(), etag, view: null, bom: text.charCodeAt(0) === 0xfeff, preview: false, reloading: false, dirty: false };
   model.onDidChangeContent(() => { if (!t.reloading) t.preview = false; renderTabs(); renderProjectBar(); }); // typing pins a preview tab
   return t;
 }
 async function ensureTabModel(rel, t) {
-  if (t.model) return t.model;
+  if (t.model || !editor) return t.model;
   let text = t.text;
-  if (!t.dirty) {
+  if (!t.dirty && text == null) {
     const d = await readFile(rel);
     text = d.text; t.etag = d.etag; t.bom = text.charCodeAt(0) === 0xfeff;
   }
   if (t.model) return t.model;
-  const model = monaco.editor.createModel(text, undefined, monaco.Uri.file('/' + rel));
+  const model = monaco.editor.createModel(text ?? '', undefined, monaco.Uri.file('/' + rel));
   t.model = model;
   t.saved = t.dirty ? -1 : model.getAlternativeVersionId();
   delete t.text;
@@ -1573,28 +1622,29 @@ async function openFile(rel, { preview = false } = {}) {
 async function activate(rel, { noReveal = false } = {}) {
   if (active && tabs.has(active)) {
     const cur = tabs.get(active);
-    if (cur.model) cur.view = editor.saveViewState();
+    if (cur.model && editor) cur.view = editor.saveViewState();
   }
   active = rel && tabs.has(rel) ? rel : null;
   if (diff && diff.rel !== active) closeCompare();
   const t = active && tabs.get(active);
   if (t) {
     showHome(false);
-    if (!t.model) {
+    if (editor && !t.model) {
       const seq = ++openSeq, openRoot = root;
       try { await ensureTabModel(active, t); } catch (e) { fail(e); return; }
       if (root !== openRoot || active !== rel || seq !== openSeq) return;
     }
   }
-  // Never setModel(null): Monaco then rebuilds its view and, in 0.52, clicks on the rebuilt view stop focusing it
-  // (typing goes nowhere). A blank placeholder model behind the watermark avoids that.
-  editor.setModel(t ? t.model : blankModel);
-  editor.updateOptions({ readOnly: !t });
-  if (t?.view) editor.restoreViewState(t.view);
+  if (editor) {
+    // Never setModel(null): Monaco then rebuilds its view and, in 0.52, clicks on the rebuilt view stop focusing it.
+    editor.setModel(t ? t.model : blankModel);
+    editor.updateOptions({ readOnly: !t });
+    if (t?.view) editor.restoreViewState(t.view);
+  }
   $('#empty').hidden = !!t;
   $('#tabs').hidden = $('#crumbs').hidden = !tabs.size;
   renderTabs(); renderCrumbs(); updateStatus();
-  if (t) { if (!noReveal) reveal(active); editor.focus(); }
+  if (t) { if (!noReveal) reveal(active); editor?.focus(); }
 }
 // Returns false if the user cancelled. force = drop without asking (only where the content is already safe).
 async function closeTab(rel, force = false) {
@@ -1953,13 +2003,45 @@ async function runBrowserTermCmd(x, rawLine) {
     }
   } catch (e) { out(`\x1b[31m${e.message}\x1b[0m\n`); }
 }
-function attachTerm(x) {
-  if (x.attached) return;
+let xtermReady = null;
+function ensureXterm() {
+  if (window.Terminal && window.FitAddon) return Promise.resolve();
+  if (xtermReady) return xtermReady;
+  const loadCss = href => new Promise(res => {
+    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href;
+    l.onload = l.onerror = res; document.head.append(l);
+  });
+  const loadJs = src => new Promise((res, rej) => {
+    const amd = window.define?.amd;
+    if (window.define) window.define.amd = undefined;
+    const s = document.createElement('script'); s.src = src; s.async = false;
+    s.onload = () => { if (window.define && amd !== undefined) window.define.amd = amd; res(); };
+    s.onerror = e => { if (window.define && amd !== undefined) window.define.amd = amd; rej(e); };
+    document.head.append(s);
+  });
+  xtermReady = (async () => {
+    await Promise.all([
+      loadCss('https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css'),
+      loadJs('https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js'),
+    ]);
+    await loadJs('https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js');
+  })();
+  return xtermReady;
+}
+async function attachTerm(x) {
+  if (x.attached || x.attaching) return;
+  x.attaching = true;
+  try { await ensureXterm(); } catch (e) { x.attaching = false; fail(e); return; }
+  x.attaching = false;
+  if (x.attached || !terms.includes(x)) return;
   const box = el('div'); box.style.visibility = 'hidden'; $('#termbody').append(box);
-  const term = new Terminal({ fontFamily: editor.getRawOptions().fontFamily, fontSize: 12, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, theme: TERM_THEME });
+  const fontFamily = editor ? editor.getRawOptions().fontFamily : 'ui-monospace, "SF Mono", Menlo, monospace';
+  const term = new Terminal({ fontFamily, fontSize: 12, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, theme: TERM_THEME });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit); term.open(box); fit.fit();
   Object.assign(x, { term, fit, box, attached: true, busy: false });
+  for (const t of terms) if (t.attached) { t.box.hidden = t !== x; if (t === x) t.box.style.visibility = ''; }
+  requestAnimationFrame(() => { fit.fit(); term.focus(); });
   term.write('\x1b[38;5;245mWebIDE Browser-Local Shell — all commands stay inside this browser.\x1b[0m\r\nType \x1b[36mhelp\x1b[0m for commands.');
   term.write(termPrompt(x));
   let hIdx = -1;
@@ -2035,7 +2117,7 @@ function dropTerm(x) {
   if (termOn === x) termOn = null;
   if (terms.length) { if (!termOn) focusTerm(terms[Math.min(i, terms.length - 1)]); else renderTerms(); } else showPanel(false);
 }
-new ResizeObserver(() => { if (!$('#panel').hidden) termOn?.fit.fit(); }).observe($('#termbody'));
+new ResizeObserver(() => { if (!$('#panel').hidden) termOn?.fit?.fit(); }).observe($('#termbody'));
 $('#term-new').onclick = () => newTerminal().catch(fail);
 $('#term-kill').onclick = () => killTerm();
 $('#panel-close').onclick = () => showPanel(false);
@@ -2553,7 +2635,7 @@ function scheduleGitRefresh(delay = 150) {
   clearTimeout(gitTimer);
   gitTimer = setTimeout(() => refreshGit().catch(() => {}), delay);
 }
-function openGitView() { showView('git'); refreshGit().catch(fail); }
+function openGitView() { showView('git'); refreshGit(true).catch(fail); }
 function parseGithubInput(raw) {
   const s = String(raw || '').trim().replace(/\/+$/, '').replace(/\.git$/i, '');
   let m = s.match(/^([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+)$/);
@@ -2563,43 +2645,64 @@ function parseGithubInput(raw) {
   if (m) return `${m[1]}/${m[2]}`;
   throw new Error('Enter a valid GitHub repository (owner/repo or https://github.com/owner/repo).');
 }
-async function refreshGit() {
+async function refreshGit(forceFsa = false) {
   const seq = ++gitSeq, proj = activeProj();
   if (!proj) { gitState = null; gitCommits = []; renderGit(); return; }
   if (!proj.isRepo) {
-    gitState = { isRepo: false, staged: [], unstaged: [], remote: proj.remote || null, branch: proj.branch || 'main', branches: [proj.branch || 'main'] };
+    gitState = { isRepo: false, staged: [], unstaged: [], remote: proj.remote || null, branch: proj.branch || 'main', branches: proj.branches || [proj.branch || 'main'] };
     gitCommits = [];
     renderGit();
     return;
   }
-  const snaps = await dbByProj('snapshots', proj.id);
-  const snapMap = new Map(snaps.map(s => [s.path, s.content]));
-  const { files } = await vfsAllFiles(proj, { skipHeavy: true, limit: 15000 });
-  const liveMap = new Map();
-  for (const rel of files) {
-    try {
-      const b = await vfsReadBytes(proj, rel);
-      liveMap.set(rel, b);
-    } catch {}
+  const stagedSet = new Set(proj.staged || []), staged = [], unstaged = [];
+  if (proj.kind !== 'fsa') {
+    const fileMeta = await ensureProjIndex(proj);
+    const snapMeta = proj.snapMeta || {};
+    for (const [rel, curEtag] of Object.entries(fileMeta)) {
+      const baseEtag = snapMeta[rel];
+      if (!baseEtag) (stagedSet.has(rel) ? staged : unstaged).push({ path: rel, status: 'A', untracked: true });
+      else if (curEtag !== baseEtag) (stagedSet.has(rel) ? staged : unstaged).push({ path: rel, status: 'M', untracked: false });
+    }
+    for (const rel of Object.keys(snapMeta)) {
+      if (!(rel in fileMeta)) (stagedSet.has(rel) ? staged : unstaged).push({ path: rel, status: 'D', untracked: false });
+    }
+  } else {
+    // Avoid expensive host-disk FSA traversal unless Source Control is visible or explicitly refreshed
+    const gitVisible = !homeOn && shown.side && prefs.view === 'git';
+    if (!forceFsa && !gitVisible) {
+      gitState = { isRepo: true, branch: proj.branch || 'main', branches: proj.branches || [proj.branch || 'main'], remote: proj.remote || null, staged: [], unstaged: [], ahead: 0, behind: 0 };
+      gitCommits = proj.commits || [];
+      renderGit();
+      return;
+    }
+    const snapMeta = proj.snapMeta || {};
+    const { files } = await vfsAllFiles(proj, { skipHeavy: true, limit: 15000 });
+    proj._fsaMeta ??= new Map();
+    const seen = new Set();
+    for (let i = 0; i < files.length; i++) {
+      if (i > 0 && i % 25 === 0) await new Promise(r => setTimeout(r, 0));
+      const rel = files[i];
+      seen.add(rel);
+      try {
+        await ensureFsaPerm(proj.handle, false);
+        const { parent, name } = await fsaResolveParent(proj.handle, rel, false);
+        const f = await (await parent.getFileHandle(name)).getFile();
+        let entry = proj._fsaMeta.get(rel);
+        if (!entry || entry.size !== f.size || entry.mtime !== f.lastModified) {
+          const u8 = new Uint8Array(await f.arrayBuffer());
+          entry = { size: f.size, mtime: f.lastModified, etag: bytesEtag(u8) };
+          proj._fsaMeta.set(rel, entry);
+        }
+        const baseEtag = snapMeta[rel];
+        if (!baseEtag) (stagedSet.has(rel) ? staged : unstaged).push({ path: rel, status: 'A', untracked: true });
+        else if (entry.etag !== baseEtag) (stagedSet.has(rel) ? staged : unstaged).push({ path: rel, status: 'M', untracked: false });
+      } catch {}
+    }
+    for (const rel of Object.keys(snapMeta)) {
+      if (!seen.has(rel)) (stagedSet.has(rel) ? staged : unstaged).push({ path: rel, status: 'D', untracked: false });
+    }
   }
   if (seq !== gitSeq) return;
-  const stagedSet = new Set(proj.staged || []), staged = [], unstaged = [];
-  for (const [rel, cur] of liveMap) {
-    const baseBytes = snapMap.get(rel);
-    if (!baseBytes) {
-      const it = { path: rel, status: 'A', untracked: true };
-      (stagedSet.has(rel) ? staged : unstaged).push(it);
-    } else if (bytesEtag(cur) !== bytesEtag(baseBytes)) {
-      const it = { path: rel, status: 'M', untracked: false };
-      (stagedSet.has(rel) ? staged : unstaged).push(it);
-    }
-  }
-  for (const rel of snapMap.keys()) {
-    if (!liveMap.has(rel)) {
-      const it = { path: rel, status: 'D', untracked: false };
-      (stagedSet.has(rel) ? staged : unstaged).push(it);
-    }
-  }
   gitState = {
     isRepo: true, branch: proj.branch || 'main', branches: [...new Set([proj.branch || 'main', ...(proj.branches || [])])],
     remote: proj.remote || null, staged, unstaged, ahead: 0, behind: 0,
@@ -2740,16 +2843,23 @@ async function gitInitRepo() {
   const proj = activeProj();
   if (!proj) return toast('Open a folder first.', 'warn');
   const { files } = await vfsAllFiles(proj, { skipHeavy: true, limit: 15000 });
-  const snaps = [];
-  for (const rel of files) {
-    try { snaps.push({ key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: await vfsReadBytes(proj, rel) }); } catch {}
+  const snaps = [], snapMeta = {};
+  for (let i = 0; i < files.length; i += 24) {
+    const batch = files.slice(i, i + 24);
+    await Promise.all(batch.map(async rel => {
+      try {
+        const content = await vfsReadBytes(proj, rel);
+        snapMeta[rel] = bytesEtag(content);
+        snaps.push({ key: fKey(proj.id, rel), projectId: proj.id, path: rel, content, etag: snapMeta[rel] });
+      } catch {}
+    }));
   }
   await dbDelByProj('snapshots', proj.id);
   if (snaps.length) await dbPutMany('snapshots', snaps);
-  proj.isRepo = true; proj.branch = proj.branch || 'main'; proj.staged = []; proj.commits = proj.commits || [];
+  proj.isRepo = true; proj.branch = proj.branch || 'main'; proj.staged = []; proj.commits = proj.commits || []; proj.snapMeta = snapMeta;
   await dbPut('projects', serializeProjMeta(proj));
   toast('Initialized browser-local snapshot repository.');
-  await refreshGit();
+  await refreshGit(true);
 }
 async function gitDiscard(it) {
   const proj = activeProj();
@@ -2774,11 +2884,14 @@ async function gitCommit() {
   if (!message) { $('#git-msg').focus(); return toast('Enter a commit message first.', 'warn'); }
   const targets = (proj.staged?.length ? proj.staged : gitState.unstaged.map(x => x.path));
   if (!targets.length) return toast('No changes to commit.', 'warn');
+  proj.snapMeta ??= {};
   for (const rel of targets) {
     try {
-      const b = await vfsReadBytes(proj, rel);
-      await dbPut('snapshots', { key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: b });
+      const b = await vfsReadBytes(proj, rel), etag = bytesEtag(b);
+      proj.snapMeta[rel] = etag;
+      await dbPut('snapshots', { key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: b, etag });
     } catch {
+      delete proj.snapMeta[rel];
       await dbDel('snapshots', fKey(proj.id, rel));
     }
   }
@@ -2788,7 +2901,7 @@ async function gitCommit() {
   await dbPut('projects', serializeProjMeta(proj));
   $('#git-msg').value = '';
   toast('Committed snapshot locally in browser IndexedDB.');
-  await refreshGit();
+  await refreshGit(true);
 }
 async function gitCheckoutLocal(branch) {
   const proj = activeProj();
@@ -2816,26 +2929,33 @@ async function exportProjectZip() {
   toast(`Exported ${entries.length} files to ${proj.name}.zip.`);
 }
 async function cloneGithubIntoBrowser(slug, branch = '') {
-  const meta = await getJSON('/proxy/github/meta?repo=' + enc(slug)).catch(() => ({ slug, defaultBranch: branch || 'main', htmlUrl: `https://github.com/${slug}` }));
-  const r = await api(`/proxy/github/archive?repo=${enc(slug)}&branch=${enc(branch)}`);
-  const zipEntries = await unzipBytes(await r.arrayBuffer());
+  const metaP = getJSON('/proxy/github/meta?repo=' + enc(slug)).catch(() => ({ slug, defaultBranch: branch || 'main', htmlUrl: `https://github.com/${slug}` }));
+  const zipResP = api(`/proxy/github/archive?repo=${enc(slug)}&branch=${enc(branch)}`);
+  const [meta, r] = await Promise.all([metaP, zipResP]);
+  const zipEntries = await unzipBytes(await r.arrayBuffer(), {
+    filter: name => {
+      const slash = name.indexOf('/'), rel = slash >= 0 ? name.slice(slash + 1) : name;
+      return !!rel && !rel.split('/').some(s => HIDDEN.has(s));
+    },
+  });
   const id = 'gh:' + slug + ':' + crypto.randomUUID().slice(0, 6);
   const repoName = slug.split('/').pop();
-  const fileRecs = [], snapRecs = [];
+  const fileRecs = [], snapRecs = [], fileMeta = {}, snapMeta = {}, now = Date.now();
   for (const [rawPath, bytes] of zipEntries) {
     const slash = rawPath.indexOf('/');
     const rel = slash >= 0 ? rawPath.slice(slash + 1) : rawPath;
-    if (!rel || rel.split('/').some(s => HIDDEN.has(s))) continue;
-    fileRecs.push({ key: fKey(id, rel), projectId: id, path: rel, content: bytes, mtime: Date.now() });
-    snapRecs.push({ key: fKey(id, rel), projectId: id, path: rel, content: bytes });
+    if (!rel) continue;
+    const etag = bytesEtag(bytes);
+    fileMeta[rel] = etag; snapMeta[rel] = etag;
+    fileRecs.push({ key: fKey(id, rel), projectId: id, path: rel, content: bytes, etag, mtime: now });
+    snapRecs.push({ key: fKey(id, rel), projectId: id, path: rel, content: bytes, etag });
   }
   const proj = emptyProj(id, {
     name: repoName, kind: 'gh', isRepo: true, branch: branch || meta.defaultBranch || 'main',
     remote: { slug, url: `https://github.com/${slug}.git`, githubUrl: meta.htmlUrl || `https://github.com/${slug}` },
+    fileMeta, snapMeta,
   });
-  await dbPutMany('files', fileRecs);
-  await dbPutMany('snapshots', snapRecs);
-  await dbPut('projects', serializeProjMeta(proj));
+  await Promise.all([dbPutMany('files', fileRecs), dbPutMany('snapshots', snapRecs), dbPut('projects', serializeProjMeta(proj))]);
   if (root) hibernateCurrent(root);
   projects.set(id, proj);
   root = id;
@@ -2848,29 +2968,38 @@ async function gitPullFromGithub() {
   if (!proj?.remote?.slug) return toast('Connect a GitHub remote first.', 'warn');
   const slug = proj.remote.slug;
   const r = await api(`/proxy/github/archive?repo=${enc(slug)}&branch=${enc(proj.branch || '')}`);
-  const zipEntries = await unzipBytes(await r.arrayBuffer());
-  const fileRecs = [], snapRecs = [];
+  const zipEntries = await unzipBytes(await r.arrayBuffer(), {
+    filter: name => {
+      const slash = name.indexOf('/'), rel = slash >= 0 ? name.slice(slash + 1) : name;
+      return !!rel && !rel.split('/').some(s => HIDDEN.has(s));
+    },
+  });
+  const fileRecs = [], snapRecs = [], fileMeta = {}, snapMeta = {}, now = Date.now();
   for (const [rawPath, bytes] of zipEntries) {
     const slash = rawPath.indexOf('/');
     const rel = slash >= 0 ? rawPath.slice(slash + 1) : rawPath;
-    if (!rel || rel.split('/').some(s => HIDDEN.has(s))) continue;
+    if (!rel) continue;
+    const etag = bytesEtag(bytes);
+    snapMeta[rel] = etag;
     if (proj.kind === 'fsa') {
       await vfsWriteFile(proj, rel, bytes, { force: true });
     } else {
-      fileRecs.push({ key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: bytes, mtime: Date.now() });
+      fileMeta[rel] = etag;
+      fileRecs.push({ key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: bytes, etag, mtime: now });
     }
-    snapRecs.push({ key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: bytes });
+    snapRecs.push({ key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: bytes, etag });
   }
   if (proj.kind !== 'fsa') {
+    proj.fileMeta = fileMeta; proj._fileCache = null;
     await dbDelByProj('files', proj.id);
     await dbPutMany('files', fileRecs);
-    proj._fileMap = null;
   }
-  await dbDelByProj('snapshots', proj.id);
+  proj.snapMeta = snapMeta;
+  await Promise.all([dbDelByProj('snapshots', proj.id), dbPut('projects', serializeProjMeta(proj))]);
   await dbPutMany('snapshots', snapRecs);
   await renderTree().catch(() => {});
   await reloadClean();
-  await refreshGit();
+  await refreshGit(true);
   toast(`Pulled latest snapshot from ${slug} into browser storage.`);
 }
 function gitBranchPicker() {
@@ -3425,21 +3554,50 @@ function bytesToDataUrl(u8, name = '') {
   return `data:${mime};base64,${btoa(bin)}`;
 }
 async function unzipVsixToManifest(buf, fallbackMeta = {}) {
-  const files = await unzipBytes(buf, { maxBytes: 120 * 1024 * 1024, maxFiles: 5000 });
-  const prefix = files.has('extension/package.json') ? 'extension' : files.has('package.json') ? '' : null;
+  // Pass 1: inflate ONLY package.json and package.nls*.json (~1-2 files) before inspecting assets
+  const metaFiles = await unzipBytes(buf, {
+    maxBytes: 120 * 1024 * 1024, maxFiles: 5000,
+    filter: name => /^(extension\/)?package(\.nls)?\.json$/i.test(name),
+  });
+  const prefix = metaFiles.has('extension/package.json') ? 'extension' : metaFiles.has('package.json') ? '' : null;
   if (prefix === null) throw new Error('Invalid VSIX: missing package.json');
-  const getRel = r => (prefix ? `${prefix}/${r.replace(/^\/+/, '')}` : r.replace(/^\/+/, ''));
-  const readTxt = r => {
-    const u8 = files.get(getRel(r));
-    return u8 ? textDec.decode(u8) : '';
-  };
-  const readJson = r => { try { const t = readTxt(r); return t ? parseJsonc(t) : null; } catch { return null; } };
-  const pkg = readJson('package.json');
+  const getRel = r => (prefix ? `${prefix}/${r.replace(/^\.?\//, '').replace(/^\/+/, '')}` : r.replace(/^\.?\//, '').replace(/^\/+/, ''));
+  const readMetaJson = r => { const u8 = metaFiles.get(getRel(r)); try { return u8 ? parseJsonc(textDec.decode(u8)) : null; } catch { return null; } };
+  const pkg = readMetaJson('package.json');
   if (!pkg) throw new Error('Invalid VSIX: malformed package.json');
-  const nls = readJson('package.nls.json') || {};
+  const nls = readMetaJson('package.nls.json') || {};
   const tr = s => (typeof s === 'string' && s.startsWith('%') && s.endsWith('%') ? (nls[s.slice(1, -1)] ?? s) : s);
   const fullId = `${pkg.publisher || fallbackMeta.publisher || 'local'}.${pkg.name || 'ext'}`;
   const dir = (fallbackMeta.id || fullId).toLowerCase();
+
+  // Pass 2: inflate ONLY needed contribution assets (themes, language configs, grammars, snippets, icon, browser bundle)
+  const contribs = pkg.contributes || {};
+  const needed = new Set();
+  const addRef = p => { if (p) needed.add(getRel(p).toLowerCase()); };
+  if (pkg.icon) addRef(pkg.icon);
+  if (pkg.browser) addRef(pkg.browser);
+  const themeDirs = new Set();
+  for (const t of contribs.themes || []) if (t.path) { addRef(t.path); themeDirs.add(getRel(t.path).split('/').slice(0, -1).join('/').toLowerCase()); }
+  for (const l of contribs.languages || []) addRef(l.configuration);
+  for (const g of contribs.grammars || []) addRef(g.path);
+  for (const s of contribs.snippets || []) addRef(s.path);
+
+  const files = needed.size ? await unzipBytes(buf, {
+    maxBytes: 120 * 1024 * 1024, maxFiles: 5000,
+    filter: name => {
+      const nl = name.toLowerCase();
+      if (needed.has(nl)) return true;
+      // Include sibling theme JSONs so theme `include` inheritance works seamlessly
+      if (nl.endsWith('.json')) for (const td of themeDirs) if (td && nl.startsWith(td + '/')) return true;
+      return false;
+    },
+  }) : new Map();
+
+  const readTxt = r => {
+    const u8 = files.get(getRel(r)) || metaFiles.get(getRel(r));
+    return u8 ? textDec.decode(u8) : '';
+  };
+  const readJson = r => { try { const t = readTxt(r); return t ? parseJsonc(t) : null; } catch { return null; } };
 
   const loadTheme = (rel, seen = new Set()) => {
     const clean = rel.replace(/^\.?\//, '');
@@ -3458,21 +3616,20 @@ async function unzipVsixToManifest(buf, fallbackMeta = {}) {
     return { type: data.type || '', colors, tokenColors };
   };
 
-  const contribs = pkg.contributes || {};
   const themes = (contribs.themes || []).map(t => {
     const th = t.path ? loadTheme(t.path) : null;
     return th ? { id: t.id || tr(t.label), label: tr(t.label || 'Theme'), uiTheme: t.uiTheme || 'vs-dark', colors: th.colors, tokenColors: th.tokenColors } : null;
   }).filter(Boolean);
   const languages = (contribs.languages || []).map(l => ({
     id: l.id, extensions: l.extensions || [], aliases: l.aliases || [], filenames: l.filenames || [], mimetypes: l.mimetypes || [],
-    configuration: l.configuration ? readJson(l.configuration.replace(/^\.?\//, '')) : null,
+    configuration: l.configuration ? readJson(l.configuration) : null,
   }));
   const grammars = (contribs.grammars || []).map(g => {
-    const data = g.path ? readJson(g.path.replace(/^\.?\//, '')) : null;
+    const data = g.path ? readJson(g.path) : null;
     return data && g.language ? { language: g.language, scopeName: g.scopeName, grammar: data } : null;
   }).filter(Boolean);
   const snippets = (contribs.snippets || []).map(s => {
-    const data = s.path ? readJson(s.path.replace(/^\.?\//, '')) : null;
+    const data = s.path ? readJson(s.path) : null;
     return data && s.language ? { language: s.language, snippets: data } : null;
   }).filter(Boolean);
   const commands = (contribs.commands || []).map(c => ({ command: c.command, title: tr(c.title || c.command), category: tr(c.category || '') }));
@@ -3482,7 +3639,7 @@ async function unzipVsixToManifest(buf, fallbackMeta = {}) {
     const ic = files.get(getRel(pkg.icon));
     if (ic) iconUrl = bytesToDataUrl(ic, pkg.icon);
   }
-  const browserCode = pkg.browser ? readTxt(pkg.browser.replace(/^\.?\//, '')) : '';
+  const browserCode = pkg.browser ? readTxt(pkg.browser) : '';
   return {
     id: fullId, dir,
     displayName: tr(pkg.displayName || fallbackMeta.displayName || pkg.name || fullId),
@@ -3569,18 +3726,15 @@ function getExtCommands() {
   return out;
 }
 
-async function loadExtensions() {
+async function loadExtensions(prefetched = null) {
+  installedExts = prefetched || await dbAll('extensions').catch(() => []);
+  renderExtensions();
   if (!editor) return;
   if (!extBuiltins.size) extBuiltins = new Set(monaco.languages.getLanguages().map(l => l.id));
-  installedExts = await dbAll('extensions').catch(() => []);
-  for (const ext of installedExts) {
-    if (ext.enabled) await activateExtension(ext);
-    else deactivateExtension(ext.dir);
-  }
   if (activeThemeKey !== 'default') {
     if (!applyThemeByKey(activeThemeKey, false)) restoreDefaultTheme(false);
   }
-  renderExtensions();
+  await Promise.all(installedExts.map(ext => (ext.enabled ? activateExtension(ext) : Promise.resolve(deactivateExtension(ext.dir)))));
 }
 
 const fmtInstalls = n => !n ? '' : n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K' : String(n);
@@ -3805,26 +3959,44 @@ $('#ext-clear').onclick = () => { $('#ext-q').value = ''; $('#ext-clear').hidden
 $('#ext-refresh').onclick = () => { dbAll('extensions').then(list => { installedExts = list; }).catch(() => {}); searchMarketplace($('#ext-q').value.trim()); };
 $('#ext-themes').onclick = () => quickOpen('', 'theme');
 
-// ---------- boot ----------
-require.config({ paths: { vs: MONACO + '/vs' } });
-window.MonacoEnvironment = { getWorkerUrl: () => URL.createObjectURL(new Blob([`self.MonacoEnvironment={baseUrl:'${MONACO}/'};importScripts('${MONACO}/vs/base/worker/workerMain.js')`], { type: 'text/javascript' })) };
-require(['vs/editor/editor.main'], async () => {
-  monaco.editor.defineTheme('dark-modern', { base: 'vs-dark', inherit: true, rules: [], colors: {
-    'editor.background': '#060608', 'editorGutter.background': '#060608', 'minimap.background': '#060608',
-    'editorLineNumber.foreground': '#525266', 'editorLineNumber.activeForeground': '#e2e8f0', 'editor.lineHighlightBackground': '#ffffff05', 'editor.lineHighlightBorder': '#ffffff0a', 'editor.selectionBackground': '#6366f138',
-  } });
-  blankModel = monaco.editor.createModel('', 'plaintext');
-  editor = monaco.editor.create($('#ed'), {
-    model: blankModel, readOnly: true, theme: 'dark-modern', wordWrap: prefs.wrap ? 'on' : 'off', automaticLayout: true, fontFamily: 'ui-monospace, "SF Mono", Menlo, "Cascadia Mono", Consolas, monospace', fontSize: 13,
-    padding: { top: 6 }, smoothScrolling: true, cursorSmoothCaretAnimation: 'on', scrollBeyondLastLine: false, renderLineHighlight: 'all',
-  });
-  editor.onDidChangeCursorPosition(updateStatus);
-  $('#loading').remove();
+// ---------- parallel boot (UI/Home/Tree render immediately; Monaco hydrates asynchronously) ----------
+const earlyBoot = (async () => {
+  ensureToken();
   try {
-    await loadExtensions().catch(e => console.warn('Extensions init:', e));
-    await loadRoot();
+    const [savedProjs, orderMeta, activeMeta, exts] = await Promise.all([
+      dbAll('projects').catch(() => []),
+      dbGet('meta', 'projects').catch(() => null),
+      dbGet('meta', 'activeProject').catch(() => null),
+      dbAll('extensions').catch(() => []),
+    ]);
+    installedExts = exts || [];
+    renderExtensions();
+    await loadRoot([savedProjs, orderMeta, activeMeta]);
   } catch (e) { fail(e); }
-}, err => { $('#loading').textContent = 'Could not load the editor (Monaco from cdnjs): ' + err.message; });
+})();
+
+function startMonaco() {
+  if (!window.require) return;
+  require.config({ paths: { vs: MONACO + '/vs' } });
+  window.MonacoEnvironment = { getWorkerUrl: () => URL.createObjectURL(new Blob([`self.MonacoEnvironment={baseUrl:'${MONACO}/'};importScripts('${MONACO}/vs/base/worker/workerMain.js')`], { type: 'text/javascript' })) };
+  require(['vs/editor/editor.main'], async () => {
+    monaco.editor.defineTheme('dark-modern', { base: 'vs-dark', inherit: true, rules: [], colors: {
+      'editor.background': '#060608', 'editorGutter.background': '#060608', 'minimap.background': '#060608',
+      'editorLineNumber.foreground': '#525266', 'editorLineNumber.activeForeground': '#e2e8f0', 'editor.lineHighlightBackground': '#ffffff05', 'editor.lineHighlightBorder': '#ffffff0a', 'editor.selectionBackground': '#6366f138',
+    } });
+    blankModel = monaco.editor.createModel('', 'plaintext');
+    editor = monaco.editor.create($('#ed'), {
+      model: blankModel, readOnly: true, theme: 'dark-modern', wordWrap: prefs.wrap ? 'on' : 'off', automaticLayout: true, fontFamily: 'ui-monospace, "SF Mono", Menlo, "Cascadia Mono", Consolas, monospace', fontSize: 13,
+      padding: { top: 6 }, smoothScrolling: true, cursorSmoothCaretAnimation: 'on', scrollBeyondLastLine: false, renderLineHighlight: 'all',
+    });
+    editor.onDidChangeCursorPosition(updateStatus);
+    $('#loading')?.remove();
+    await earlyBoot;
+    await loadExtensions(installedExts).catch(e => console.warn('Extensions init:', e));
+    if (active && tabs.has(active)) await activate(active, { noReveal: true });
+  }, err => { $('#loading').textContent = 'Could not load the editor (Monaco from cdnjs): ' + err.message; });
+}
+if (window.require) startMonaco(); else addEventListener('DOMContentLoaded', startMonaco, { once: true });
 </script>
 </body>
 </html>

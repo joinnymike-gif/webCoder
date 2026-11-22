@@ -6,6 +6,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 
 const PORT = +process.env.WEBIDE_PORT || 47321;
@@ -13,6 +14,15 @@ const HOST = process.env.WEBIDE_HOST || '127.0.0.1';
 const ORIGINS = (process.env.WEBIDE_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 const SELF = fileURLToPath(import.meta.url);
 const HTML_PATH = path.join(path.dirname(SELF), 'web', 'index.html');
+let cachedHtml = { mtimeMs: -1, raw: null, gz: null };
+function getHtmlPayload() {
+  const st = fs.statSync(HTML_PATH);
+  if (st.mtimeMs !== cachedHtml.mtimeMs) {
+    const raw = fs.readFileSync(HTML_PATH);
+    cachedHtml = { mtimeMs: st.mtimeMs, raw, gz: zlib.gzipSync(raw, { level: 6 }) };
+  }
+  return cachedHtml;
+}
 
 class HttpErr extends Error {
   constructor(code, msg) { super(msg); this.code = code; }
@@ -165,9 +175,12 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/' && req.method === 'GET') {
       const csp = "default-src 'none'; script-src 'self' 'unsafe-inline' blob: https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; font-src https://cdnjs.cloudflare.com data:; img-src 'self' data: https:; connect-src 'self' https:; worker-src blob:; frame-ancestors 'none'";
-      return reply(res, 200, fs.readFileSync(HTML_PATH), 'text/html; charset=utf-8', {
+      const { raw, gz } = getHtmlPayload();
+      const useGz = /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''));
+      return reply(res, 200, useGz ? gz : raw, 'text/html; charset=utf-8', {
         'content-security-policy': csp,
         'x-content-type-options': 'nosniff',
+        ...(useGz && { 'content-encoding': 'gzip', vary: 'Accept-Encoding' }),
       });
     }
 
