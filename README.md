@@ -47,7 +47,7 @@ docker compose up -d --build
 ```
 
 内置零鉴权防护（无需密码即可直接打开，同时防止代理带宽被刷）：
-- **简单反爬虫**：提供 `GET /robots.txt`（`Disallow: /`）与 `X-Robots-Tag: noindex, nofollow, noarchive`；拦截常见爬虫/脚本 UA（`GPTBot`、`Scrapy`、`python-requests`、`curl` 等）访问主页面及代理接口；`/session` Token 绑定客户端 IP 与 UA 哈希（2 小时滑动失效），无法跨机器盗刷。
+- **SEO / AEO 与反爬虫**：公开页面 `/`、`/en`、`/zh`（中英文落地页，含 FAQ 与 JSON-LD）、`/llms.txt`、`/sitemap.xml` 允许搜索引擎与 AI 答案引擎（Googlebot、Bingbot、Baiduspider、Sogou、GPTBot、ClaudeBot、PerplexityBot 等）抓取；`/robots.txt` 屏蔽 `/proxy/` 与 `/session`，canonical / hreflang 按请求域名自动生成绝对地址。其他爬虫/脚本 UA（`Scrapy`、`python-requests`、`curl`、SEO 抓取器等）及所有爬虫访问 `/session`、`/proxy/*` 时一律拦截；`/session` Token 绑定客户端 IP 与 UA 哈希（2 小时滑动失效）。预发布/私有部署可设 `WEBIDE_NOINDEX=1` 恢复全站 `Disallow: /` + `noindex`。
 - **单 IP 频率与流量限制**：触发上限返回 `429` 与 `Retry-After`（页面 `WEBIDE_RL_PAGE=120`/分钟、会话 `WEBIDE_RL_SESSION=20`/分钟、搜索/元信息 `WEBIDE_RL_PROXY=60`/分钟、ZIP/VSIX 下载 `WEBIDE_RL_DL=15`/分钟且单 IP 每 10 分钟下载总量上限 `WEBIDE_RL_DL_MB=500` MB）。
 
 #### 环境变量与浏览器存储分布
@@ -166,7 +166,7 @@ docker compose up -d --build
 ```
 
 Built-in zero-password abuse protection:
-- **Lightweight Anti-Crawler**: Serves `GET /robots.txt` (`Disallow: /`) and `X-Robots-Tag: noindex, nofollow, noarchive`; blocks known scraper/crawler User-Agents (`GPTBot`, `Scrapy`, `python-requests`, `curl`, etc.) on `/` and `/proxy/*` while keeping `/health` open; binds `/session` tokens to client IP + UA hash (2h sliding TTL) so scraped tokens cannot be replayed across hosts.
+- **SEO / AEO & Anti-Crawler**: Public pages `/`, `/en`, `/zh` (bilingual landing pages with FAQ + JSON-LD), `/llms.txt` and `/sitemap.xml` are open to search and AI answer engines (Googlebot, Bingbot, Baiduspider, Sogou, GPTBot, ClaudeBot, PerplexityBot, …); `/robots.txt` disallows `/proxy/` and `/session`, and canonical / hreflang URLs are built from the request host. Other scraper UAs (`Scrapy`, `python-requests`, `curl`, SEO crawlers, …) and every crawler on `/session` / `/proxy/*` are blocked; `/session` tokens are bound to client IP + UA hash (2h sliding TTL). Set `WEBIDE_NOINDEX=1` on staging/private deployments to restore site-wide `Disallow: /` + `noindex`.
 - **Per-IP Rate & Bandwidth Limits**: Returns `429 Too Many Requests` with `Retry-After` (defaults: `WEBIDE_RL_PAGE=120`/min, `WEBIDE_RL_SESSION=20`/min, `WEBIDE_RL_PROXY=60`/min, `WEBIDE_RL_DL=15`/min, and `WEBIDE_RL_DL_MB=500` MB / 10 min per IP).
 
 #### Environment Variables & Browser Storage Layout
@@ -176,6 +176,7 @@ Built-in zero-password abuse protection:
 - `WEBIDE_TRUST_PROXY`: Set `1` behind Caddy/Nginx/Cloudflare to trust forwarded client IPs (`X-Real-IP` / `CF-Connecting-IP`).
 - `WEBIDE_ORIGINS`: Comma-separated list of additional allowed CORS origins.
 - `WEBIDE_RL_PAGE` / `WEBIDE_RL_SESSION` / `WEBIDE_RL_PROXY` / `WEBIDE_RL_DL` / `WEBIDE_RL_DL_MB` / `WEBIDE_ALLOW_BOTS`: Per-IP rate-limit/bandwidth thresholds and optional bot bypass flag.
+- `WEBIDE_NOINDEX`: Set `1` to keep the deployment out of search engines (staging / private hosts).
 - **Browser IndexedDB (`webide-browser-v1`)**: Strictly isolated per browser profile and origin across 5 stores: `projects` (project metadata & `FileSystemDirectoryHandle`), `files` (GitHub clones & imported local files), `snapshots` (browser-local baseline snapshots), `extensions` (unpacked VS Code extensions, themes, grammars, snippets, and browser bundles), and `meta` (project taskbar ordering and active selection).
 - **Browser `localStorage`**: Stores layout preferences (`webidePrefs`), active color theme key (`webideTheme`), and extension setting values.
 

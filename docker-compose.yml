@@ -13,6 +13,7 @@ services:
       WEBIDE_RL_PROXY: ${WEBIDE_RL_PROXY:-60}
       WEBIDE_RL_DL: ${WEBIDE_RL_DL:-15}
       WEBIDE_RL_DL_MB: ${WEBIDE_RL_DL_MB:-500}
+      WEBIDE_NOINDEX: ${WEBIDE_NOINDEX:-}
     expose:
       - "47321"
     mem_limit: 512m

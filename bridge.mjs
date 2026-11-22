@@ -20,6 +20,8 @@ const PUBLIC_HOSTS = new Set(
 );
 const TRUST_PROXY = /^(1|true|yes)$/i.test(process.env.WEBIDE_TRUST_PROXY || '');
 const ALLOW_BOTS = /^(1|true|yes)$/i.test(process.env.WEBIDE_ALLOW_BOTS || '');
+// Set on staging/private deployments to keep the old "Disallow: /" + noindex behaviour.
+const NOINDEX = /^(1|true|yes)$/i.test(process.env.WEBIDE_NOINDEX || '');
 
 const envPosInt = (name, def) => {
   const n = Number(process.env[name]);
@@ -36,15 +38,40 @@ const RL = {
 };
 
 const SELF = fileURLToPath(import.meta.url);
-const HTML_PATH = path.join(path.dirname(SELF), 'web', 'index.html');
-let cachedHtml = { mtimeMs: -1, raw: null, gz: null };
-function getHtmlPayload() {
-  const st = fs.statSync(HTML_PATH);
-  if (st.mtimeMs !== cachedHtml.mtimeMs) {
-    const raw = fs.readFileSync(HTML_PATH);
-    cachedHtml = { mtimeMs: st.mtimeMs, raw, gz: zlib.gzipSync(raw, { level: 6 }) };
+const ROOT = path.dirname(SELF);
+// Public, crawlable pages. %ORIGIN% in the file is replaced with the request origin
+// so canonical / hreflang / og:url are absolute without hard-coding a domain.
+const PAGES = {
+  '/': ['web/index.html', 'text/html; charset=utf-8'],
+  '/en': ['site/en.html', 'text/html; charset=utf-8'],
+  '/zh': ['site/zh.html', 'text/html; charset=utf-8'],
+  '/llms.txt': ['site/llms.txt', 'text/plain; charset=utf-8'],
+  '/favicon.svg': ['site/favicon.svg', 'image/svg+xml'],
+};
+const LANDING_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'";
+const APP_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline' blob: https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; font-src https://cdnjs.cloudflare.com data:; img-src 'self' data: https:; connect-src 'self' https:; worker-src blob:; frame-ancestors 'none'";
+const pageCache = new Map(); // `${file}|${origin}` -> { mtimeMs, raw, gz }
+function getPagePayload(file, origin) {
+  const abs = path.join(ROOT, file);
+  const key = `${file}|${origin}`;
+  const st = fs.statSync(abs);
+  let c = pageCache.get(key);
+  if (!c || c.mtimeMs !== st.mtimeMs) {
+    const raw = Buffer.from(fs.readFileSync(abs, 'utf8').replaceAll('%ORIGIN%', origin));
+    c = { mtimeMs: st.mtimeMs, raw, gz: zlib.gzipSync(raw, { level: 6 }) };
+    if (pageCache.size > 64) pageCache.clear(); // ponytail: bounded by allowlisted hosts; LRU if `*` hosts get busy
+    pageCache.set(key, c);
   }
-  return cachedHtml;
+  return c;
+}
+
+// Host header is allowlisted by hostname only, so rebuild it from safe parts before
+// echoing it into HTML / XML.
+function requestOrigin(req, hostName) {
+  const port = String(req.headers.host || '').split(':')[1];
+  const xfp = TRUST_PROXY ? String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() : '';
+  const proto = xfp === 'https' || xfp === 'http' ? xfp : 'http';
+  return `${proto}://${hostName.toLowerCase()}${port && /^\d{1,5}$/.test(port) ? ':' + port : ''}`;
 }
 
 class HttpErr extends Error {
@@ -76,11 +103,25 @@ function getClientIp(req) {
 const uaHash = ua => crypto.createHash('sha256').update(String(ua || '')).digest('base64url').slice(0, 12);
 
 const BOT_UA_RE = /(?:^|[\s;/(_-])(bot|spider|crawl(?:er|ing)?|scrapy|python-requests|python-urllib|aiohttp|go-http-client|httpclient|libwww-perl|wget|curl|masscan|zgrab|sqlmap|nikto|nmap|ahrefsbot|semrushbot|mj12bot|bytespider|gptbot|claudebot|ccbot|petalbot|yandexbot|bingbot|baiduspider|googlebot|duckduckbot|slurp|facebookexternalhit|twitterbot)(?:$|[\s;/),_-])/i;
-function isBlockedBot(req) {
+// Search engines, AI answer engines and link-preview bots may read public pages
+// (never /session or /proxy/*). UA can be spoofed; per-IP rate limits still apply.
+const GOOD_BOT_RE = /googlebot|google-inspectiontool|adsbot-google|storebot-google|bingbot|bingpreview|msnbot|duckduckbot|yandex|baiduspider|sogou|360spider|yisouspider|bytespider|applebot|petalbot|gptbot|oai-searchbot|chatgpt-user|claudebot|claude-user|claude-searchbot|perplexitybot|perplexity-user|ccbot|amazonbot|meta-externalagent|facebookexternalhit|twitterbot|linkedinbot|slackbot|discordbot|telegrambot|whatsapp/i;
+function isBlockedBot(req, publicPage = false) {
   if (ALLOW_BOTS) return false;
   const ua = String(req.headers['user-agent'] || '').trim();
   if (!ua && PUBLIC_HOSTS.size > 0) return true;
+  if (GOOD_BOT_RE.test(ua)) return !(publicPage && !NOINDEX);
   return BOT_UA_RE.test(ua);
+}
+
+const SITEMAP_PATHS = ['/', '/en', '/zh'];
+function sitemapXml(origin) {
+  const alt = ['<xhtml:link rel="alternate" hreflang="en" href="' + origin + '/en"/>',
+    '<xhtml:link rel="alternate" hreflang="zh-Hans" href="' + origin + '/zh"/>',
+    '<xhtml:link rel="alternate" hreflang="x-default" href="' + origin + '/en"/>'].join('');
+  return '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n'
+    + SITEMAP_PATHS.map(p => `<url><loc>${origin}${p}</loc>${p === '/' ? '' : alt}</url>`).join('\n')
+    + '\n</urlset>\n';
 }
 
 const rlBuckets = new Map();
@@ -322,22 +363,38 @@ const server = http.createServer(async (req, res) => {
     // Health check stays unthrottled for container / PaaS readiness probes
     if (p === '/health' && req.method === 'GET') return reply(res, 200, 'ok');
 
+    const origin0 = requestOrigin(req, hostName);
+    const indexHdr = { 'x-robots-tag': NOINDEX ? 'noindex, nofollow, noarchive' : 'index, follow, max-image-preview:large, max-snippet:-1' };
+
     if (p === '/robots.txt' && req.method === 'GET') {
-      return reply(res, 200, 'User-agent: *\nDisallow: /\n', 'text/plain; charset=utf-8');
+      const body = NOINDEX
+        ? 'User-agent: *\nDisallow: /\n'
+        : `User-agent: *\nAllow: /\nDisallow: /proxy/\nDisallow: /session\nDisallow: /health\n\nSitemap: ${origin0}/sitemap.xml\n`;
+      return reply(res, 200, body, 'text/plain; charset=utf-8', { 'cache-control': 'public, max-age=3600' });
     }
 
-    // Block automated scrapers / crawlers
-    if (isBlockedBot(req)) {
+    const page = req.method === 'GET' || req.method === 'HEAD' ? PAGES[p] : null;
+    const isPublic = !!page || p === '/sitemap.xml';
+
+    // Block automated scrapers / crawlers (known search / AI engines may read public pages)
+    if (isBlockedBot(req, isPublic)) {
       return reply(res, 403, 'forbidden (automated client)');
     }
 
-    if (p === '/' && req.method === 'GET') {
+    if (p === '/sitemap.xml' && req.method === 'GET' && !NOINDEX) {
       if (!enforceRate(res, `page:${ip}`, RL.pageMax, 60_000)) return;
-      const csp = "default-src 'none'; script-src 'self' 'unsafe-inline' blob: https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; font-src https://cdnjs.cloudflare.com data:; img-src 'self' data: https:; connect-src 'self' https:; worker-src blob:; frame-ancestors 'none'";
-      const { raw, gz } = getHtmlPayload();
-      const useGz = /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''));
-      return reply(res, 200, useGz ? gz : raw, 'text/html; charset=utf-8', {
-        'content-security-policy': csp,
+      return reply(res, 200, sitemapXml(origin0), 'application/xml; charset=utf-8', { ...indexHdr, 'cache-control': 'public, max-age=3600' });
+    }
+
+    if (page) {
+      if (!enforceRate(res, `page:${ip}`, RL.pageMax, 60_000)) return;
+      const [file, type] = page;
+      const { raw, gz } = getPagePayload(file, origin0);
+      const useGz = req.method === 'GET' && /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''));
+      return reply(res, 200, req.method === 'HEAD' ? '' : useGz ? gz : raw, type, {
+        ...indexHdr,
+        'cache-control': p === '/' ? 'no-cache' : 'public, max-age=3600',
+        'content-security-policy': p === '/' ? APP_CSP : LANDING_CSP,
         ...(useGz && { 'content-encoding': 'gzip', vary: 'Accept-Encoding' }),
       });
     }

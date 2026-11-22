@@ -58,14 +58,37 @@ try {
   const csp = page.headers.get('content-security-policy') || '';
   assert.ok(csp.includes('script-src') && csp.includes('blob:') && !csp.includes("'unsafe-eval'"), 'CSP allows blob scripts without unsafe-eval');
   assert.equal(page.headers.get('x-frame-options'), 'DENY');
-  assert.ok((page.headers.get('x-robots-tag') || '').includes('noindex'));
+  assert.ok((page.headers.get('x-robots-tag') || '').startsWith('index'), 'app page is indexable');
+  const pageHtml = await page.text();
+  assert.ok(pageHtml.includes(`<link rel="canonical" href="${B}/">`) && !pageHtml.includes('%ORIGIN%'), 'absolute canonical filled from request origin');
 
   const robots = await f('/robots.txt');
   assert.equal(robots.status, 200, 'serves robots.txt');
-  assert.ok((await robots.text()).includes('Disallow: /'));
+  const robotsTxt = await robots.text();
+  assert.ok(robotsTxt.includes('Allow: /') && robotsTxt.includes('Disallow: /proxy/') && robotsTxt.includes(`Sitemap: ${B}/sitemap.xml`), 'robots allows pages, hides API, links sitemap');
+
+  // SEO / AEO entry points
+  for (const [pth, needle] of [['/en', `href="${B}/en"`], ['/zh', 'lang="zh-Hans"'], ['/llms.txt', `${B}/en`], ['/sitemap.xml', `<loc>${B}/zh</loc>`], ['/favicon.svg', '<svg']]) {
+    const r = await f(pth);
+    const body = await r.text();
+    assert.equal(r.status, 200, `serves ${pth}`);
+    assert.ok(body.includes(needle) && !body.includes('%ORIGIN%'), `${pth} content`);
+  }
+  for (const pth of ['/en', '/zh']) {
+    const ld = (await (await f(pth)).text()).match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+    assert.ok(JSON.parse(ld[1])['@graph'].some(n => n['@type'] === 'FAQPage'), `${pth} has valid FAQPage JSON-LD`);
+  }
+
+  // Search / AI answer engines may read public pages, never session or proxy
+  for (const goodUa of ['Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', 'Mozilla/5.0 (compatible; GPTBot/1.0)', 'Sogou web spider/4.0', 'Mozilla/5.0 (compatible; PerplexityBot/1.0)']) {
+    assert.equal((await f('/', { headers: { 'user-agent': goodUa } })).status, 200, `allows search/AI bot on /: ${goodUa}`);
+    assert.equal((await f('/en', { headers: { 'user-agent': goodUa } })).status, 200, `allows search/AI bot on /en: ${goodUa}`);
+    const rs = await f('/session', { method: 'POST', headers: { origin: B, 'sec-fetch-site': 'same-origin', 'user-agent': goodUa } });
+    assert.equal(rs.status, 403, `blocks search/AI bot on /session: ${goodUa}`);
+  }
 
   // Anti-crawler blocking
-  for (const botUa of ['python-requests/2.31.0', 'Scrapy/2.11', 'Mozilla/5.0 (compatible; GPTBot/1.0)', 'curl/8.7.1']) {
+  for (const botUa of ['python-requests/2.31.0', 'Scrapy/2.11', 'Mozilla/5.0 (compatible; SemrushBot/7)', 'curl/8.7.1']) {
     const r = await f('/', { headers: { 'user-agent': botUa } });
     assert.equal(r.status, 403, `blocks bot UA on /: ${botUa}`);
     const rs = await f('/session', { method: 'POST', headers: { origin: B, 'sec-fetch-site': 'same-origin', 'user-agent': botUa } });
@@ -112,6 +135,7 @@ try {
       WEBIDE_TRUST_PROXY: '1',
       WEBIDE_RL_PAGE: '2',
       WEBIDE_RL_SESSION: '2',
+      WEBIDE_NOINDEX: '1',
     },
     stdio: 'pipe',
   });
@@ -129,6 +153,17 @@ try {
   assert.equal(rlHit.status, 429, 'enforces per-IP rate limit');
   assert.ok(Number(rlHit.headers['retry-after']) >= 1, 'includes Retry-After header on 429');
   assert.equal(otherIp.status, 200, 'isolates rate limit bucket by client IP');
+
+  // Behind a TLS proxy the origin is https; WEBIDE_NOINDEX restores Disallow-all + noindex
+  const prodEn = await rawHttp(PROD_PORT, '/en', 'GET', { host: 'ide.example.com', 'user-agent': BROWSER_UA, 'x-real-ip': '203.0.113.12', 'x-forwarded-proto': 'https' });
+  assert.ok(prodEn.body.includes('href="https://ide.example.com/en"'), 'uses forwarded https origin');
+  assert.ok(prodEn.headers['x-robots-tag'].includes('noindex'), 'NOINDEX sets noindex header');
+  const prodRobots = await rawHttp(PROD_PORT, '/robots.txt', 'GET', { host: 'ide.example.com', 'user-agent': BROWSER_UA });
+  assert.ok(prodRobots.body.includes('Disallow: /\n') && !prodRobots.body.includes('Sitemap'), 'NOINDEX robots disallows all');
+  const prodBot = await rawHttp(PROD_PORT, '/en', 'GET', { host: 'ide.example.com', 'user-agent': 'Googlebot/2.1', 'x-real-ip': '203.0.113.13' });
+  assert.equal(prodBot.status, 403, 'NOINDEX blocks search bots');
+  const evilPort = await rawHttp(PROD_PORT, '/en', 'GET', { host: 'ide.example.com:"><x', 'user-agent': BROWSER_UA, 'x-real-ip': '203.0.113.14' });
+  assert.ok(!evilPort.body.includes('"><x'), 'Host port is not echoed into HTML');
 
   // Verify ZERO files/folders were created on the server (stateless host)
   assert.deepEqual(fs.readdirSync(home), [], 'server never writes user files or state to disk');

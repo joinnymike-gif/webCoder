@@ -1,0 +1,20 @@
+# WebIDE
+
+> WebIDE is a free, open-source, privacy-first code editor and VS Code-style IDE that runs entirely in the web browser. Users open a local folder or any public GitHub repository and get the Monaco editor, file explorer, full-text search, VS Code extensions (themes, grammars, snippets), browser-local source control with diff and history, Markdown preview and a sandbox terminal. No install, no account; files stay in the user's browser (IndexedDB / File System Access API) and are never stored on a server.
+
+Key facts:
+- Price: free, no sign-up.
+- Runs in: any modern browser; Chrome/Edge can read and write local folders directly, Safari/Firefox import folders via drag and drop.
+- Open a GitHub repo: click "Open from GitHub" and paste `owner/repo` or a github.com URL.
+- Limits: cannot run arbitrary programs or debuggers (no server-side execution); extensions needing Node.js do not work.
+- Mobile: touch-friendly code-browsing layout on phones.
+
+## Pages
+
+- [WebIDE app](%ORIGIN%/): the editor itself
+- [About WebIDE (English)](%ORIGIN%/en): features, how-to guides, comparison with desktop IDEs, FAQ
+- [WebIDE 介绍（中文）](%ORIGIN%/zh): 功能、使用教程、常见问题
+
+## Optional
+
+- [Source code on GitHub](https://github.com/joinnymike-gif/webCoder)

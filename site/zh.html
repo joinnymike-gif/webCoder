@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebIDE — 免费在线代码编辑器 · 浏览器里的 VS Code 风格 IDE</title>
+<meta name="description" content="WebIDE 是免费、隐私优先的在线 IDE：在浏览器中打开本地文件夹或任意公开 GitHub 仓库，获得 VS Code 风格的 Monaco 编辑器、插件、全文搜索、Diff 与终端。无需安装、无需注册，文件不离开浏览器。">
+<meta name="keywords" content="在线代码编辑器,在线IDE,浏览器IDE,在线VS Code,在线查看GitHub代码,Web IDE,Monaco编辑器">
+<link rel="canonical" href="%ORIGIN%/zh">
+<link rel="alternate" hreflang="en" href="%ORIGIN%/en">
+<link rel="alternate" hreflang="zh-Hans" href="%ORIGIN%/zh">
+<link rel="alternate" hreflang="x-default" href="%ORIGIN%/en">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#060608">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="WebIDE">
+<meta property="og:title" content="WebIDE — 免费在线代码编辑器">
+<meta property="og:description" content="在浏览器里打开本地文件夹或任意公开 GitHub 仓库，VS Code 风格，无需安装与注册。">
+<meta property="og:url" content="%ORIGIN%/zh">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:locale:alternate" content="en_US">
+<meta name="twitter:card" content="summary">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebApplication",
+      "@id": "%ORIGIN%/#app",
+      "name": "WebIDE",
+      "alternateName": "WebIDE 在线代码编辑器",
+      "url": "%ORIGIN%/",
+      "description": "免费、隐私优先的浏览器 IDE。打开本地文件夹或公开 GitHub 仓库，内置 Monaco 编辑器、VS Code 插件、全文搜索、Diff 视图与沙箱终端，所有文件只保存在浏览器本地。",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "任意（现代浏览器）",
+      "inLanguage": ["zh-Hans", "en"],
+      "isAccessibleForFree": true,
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CNY" },
+      "sameAs": ["https://github.com/joinnymike-gif/webCoder"]
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "%ORIGIN%/zh#faq",
+      "inLanguage": "zh-Hans",
+      "mainEntity": [
+        { "@type": "Question", "name": "WebIDE 免费吗？", "acceptedAnswer": { "@type": "Answer", "text": "免费且开源，无需账号、无需注册，也没有付费版本。" } },
+        { "@type": "Question", "name": "我的代码会上传到服务器吗？", "acceptedAnswer": { "@type": "Answer", "text": "不会。本地文件夹由浏览器直接读写，GitHub 仓库保存在浏览器的 IndexedDB 中。服务端只托管页面并转发公开只读下载，不存储任何数据。" } },
+        { "@type": "Question", "name": "如何在浏览器中在线查看 GitHub 仓库代码？", "acceptedAnswer": { "@type": "Answer", "text": "打开 WebIDE，点击“从 GitHub 打开”，粘贴 owner/repo 或 github.com 链接即可。WebIDE 会下载公开仓库的 ZIP 并在浏览器内解压，支持浏览、搜索和编辑。" } },
+        { "@type": "Question", "name": "不安装软件能编辑本地文件吗？", "acceptedAnswer": { "@type": "Answer", "text": "可以。在 Chrome / Edge 中点击“打开本地仓库”并授权即可直接读写磁盘文件；Safari / Firefox 可拖入或选择文件夹，文件导入浏览器存储，并可导出为 ZIP。" } },
+        { "@type": "Question", "name": "支持 VS Code 插件吗？", "acceptedAnswer": { "@type": "Answer", "text": "支持从 VS Code Marketplace 和 Open VSX 在浏览器内安装插件。主题、语法高亮、代码片段和简单的浏览器插件可用；依赖 Node.js 或本地进程的插件不可用。" } },
+        { "@type": "Question", "name": "能运行代码或使用终端吗？", "acceptedAnswer": { "@type": "Answer", "text": "内置沙箱终端，支持 ls、cd、cat、find、git status 等文件命令；不支持运行任意程序，因为服务端不执行任何代码。" } },
+        { "@type": "Question", "name": "手机上能用吗？", "acceptedAnswer": { "@type": "Answer", "text": "可以。窄屏下自动切换为适合触屏的看代码模式，带底部导航、文件抽屉和全宽编辑器。" } }
+      ]
+    }
+  ]
+}
+</script>
+<style>
+  :root { --bg:#060608; --card:#0d0d12; --border:#ffffff14; --fg:#d4d4e0; --strong:#fff; --dim:#9494a8; --grad:linear-gradient(135deg,#8b5cf6 0%,#3b82f6 55%,#06b6d4 100%); color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: radial-gradient(720px 360px at 50% 0, #8b5cf622, transparent 70%), var(--bg); color: var(--fg); font: 16px/1.75 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #38bdf8; }
+  header, main, footer { width: min(860px, 100%); margin: 0 auto; padding: 0 20px; }
+  nav { display: flex; align-items: center; gap: 16px; padding: 18px 0; font-size: 14px; }
+  nav .brand { display: flex; align-items: center; gap: 10px; color: var(--strong); font-weight: 700; text-decoration: none; margin-right: auto; }
+  nav a { color: var(--dim); text-decoration: none; } nav a:hover { color: var(--strong); }
+  h1 { font-size: clamp(28px, 5vw, 42px); line-height: 1.25; color: var(--strong); margin: 48px 0 16px; }
+  h2 { font-size: 24px; color: var(--strong); margin: 56px 0 12px; }
+  h3 { font-size: 17px; color: var(--strong); margin: 0 0 6px; }
+  .lead { font-size: 18px; max-width: 720px; }
+  .cta { display: inline-flex; align-items: center; height: 44px; padding: 0 22px; border-radius: 10px; background: var(--grad); color: #fff; font-weight: 600; text-decoration: none; box-shadow: 0 4px 18px #6366f14d; margin: 12px 12px 0 0; }
+  .cta.sec { background: #ffffff0d; border: 1px solid var(--border); box-shadow: none; color: var(--fg); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .card p { margin: 0; color: var(--dim); font-size: 15px; }
+  ol { padding-left: 22px; } li { margin: 6px 0; }
+  details { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin: 10px 0; }
+  summary { cursor: pointer; color: var(--strong); font-weight: 600; }
+  details p { margin: 10px 0 0; color: var(--dim); }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; } th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--border); } th { color: var(--strong); }
+  footer { color: var(--dim); font-size: 14px; padding: 48px 20px; }
+</style>
+</head>
+<body>
+<header>
+  <nav aria-label="主导航">
+    <a class="brand" href="/"><img src="/favicon.svg" width="28" height="28" alt="">WebIDE</a>
+    <a href="#features">功能</a>
+    <a href="#faq">常见问题</a>
+    <a href="/en" hreflang="en" lang="en">English</a>
+  </nav>
+</header>
+<main>
+  <h1>免费在线代码编辑器：在浏览器里使用 VS Code 风格的 IDE</h1>
+  <p class="lead"><strong>WebIDE</strong> 是一个免费、隐私优先的浏览器 IDE。打开电脑上的文件夹或任意公开 GitHub 仓库，即可获得 VS Code 风格的工作区——Monaco 编辑器、资源管理器、全文搜索、插件、Diff 与终端。无需安装、无需注册，文件始终留在你的浏览器里，不会上传。</p>
+  <a class="cta" href="/">免费打开 WebIDE</a>
+  <a class="cta sec" href="https://github.com/joinnymike-gif/webCoder" rel="noopener">GitHub 源码</a>
+
+  <h2 id="features">核心功能</h2>
+  <div class="grid">
+    <div class="card"><h3>Monaco 编辑器</h3><p>与 VS Code 同源的编辑器内核：语法高亮、智能补全、多光标、Prettier 格式化、TypeScript 跳转定义。</p></div>
+    <div class="card"><h3>打开本地文件夹</h3><p>Chrome / Edge 可直接读写真实目录；Safari / Firefox 支持从访达或资源管理器拖入文件夹。</p></div>
+    <div class="card"><h3>在线查看 GitHub 代码</h3><p>粘贴 <code>owner/repo</code> 或 github.com 链接，在浏览器里浏览、搜索、编辑任意公开仓库。</p></div>
+    <div class="card"><h3>VS Code 插件</h3><p>从 VS Code Marketplace 与 Open VSX 安装主题、语法和代码片段，全部在浏览器内解包。</p></div>
+    <div class="card"><h3>源代码管理与历史</h3><p>查看变更文件、并排 Diff、本地提交与文件历史，一键导出 ZIP。</p></div>
+    <div class="card"><h3>隐私优先</h3><p>无账号、无埋点、服务端零存储，工作区只保存在你自己浏览器的 IndexedDB 中。</p></div>
+    <div class="card"><h3>Markdown 预览</h3><p>README 与文档实时并排预览，滚动同步。</p></div>
+    <div class="card"><h3>手机看代码</h3><p>针对触屏优化的布局：文件抽屉、底部导航、全宽编辑器。</p></div>
+  </div>
+
+  <h2 id="how-to">如何在浏览器中在线打开 GitHub 仓库</h2>
+  <ol>
+    <li>访问 <a href="/">WebIDE</a>。</li>
+    <li>点击 <strong>从 GitHub 打开</strong>。</li>
+    <li>粘贴仓库地址，如 <code>microsoft/vscode</code> 或 <code>https://github.com/microsoft/vscode</code>，可选填分支。</li>
+    <li>按 <kbd>⌘P</kbd> / <kbd>Ctrl+P</kbd> 快速打开文件，按 <kbd>⇧⌘F</kbd> / <kbd>Ctrl+Shift+F</kbd> 全仓库搜索。</li>
+  </ol>
+
+  <h2 id="local">不装 IDE，如何在线编辑本地文件夹</h2>
+  <ol>
+    <li>用 Chrome 或 Edge 打开 <a href="/">WebIDE</a>，点击 <strong>打开本地仓库</strong>（或按 <kbd>⌘O</kbd> / <kbd>Ctrl+O</kbd>）。</li>
+    <li>选择文件夹，并在浏览器提示时允许编辑权限。</li>
+    <li>用 <kbd>⌘S</kbd> / <kbd>Ctrl+S</kbd> 保存，修改直接写回磁盘。</li>
+  </ol>
+
+  <h2 id="compare">WebIDE 与桌面 IDE 对比</h2>
+  <table>
+    <thead><tr><th></th><th>WebIDE</th><th>桌面 IDE</th></tr></thead>
+    <tbody>
+      <tr><td>安装</td><td>无需安装，打开网址即用</td><td>需下载安装</td></tr>
+      <tr><td>账号</td><td>不需要</td><td>通常可选</td></tr>
+      <tr><td>打开 GitHub 仓库</td><td>粘贴链接即可</td><td>需先 git clone</td></tr>
+      <tr><td>运行程序 / 调试</td><td>不支持（仅沙箱终端）</td><td>支持</td></tr>
+      <tr><td>适用场景</td><td>随时随地阅读、审查代码与快速修改</td><td>包含构建和调试的完整开发</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="faq">常见问题</h2>
+  <details open><summary>WebIDE 免费吗？</summary><p>免费且开源，无需账号、无需注册，也没有付费版本。</p></details>
+  <details><summary>我的代码会上传到服务器吗？</summary><p>不会。本地文件夹由浏览器直接读写，GitHub 仓库保存在浏览器的 IndexedDB 中。服务端只托管页面并转发公开只读下载，不存储任何数据。</p></details>
+  <details><summary>如何在浏览器中在线查看 GitHub 仓库代码？</summary><p>打开 WebIDE，点击“从 GitHub 打开”，粘贴 owner/repo 或 github.com 链接即可。WebIDE 会下载公开仓库的 ZIP 并在浏览器内解压，支持浏览、搜索和编辑。</p></details>
+  <details><summary>不安装软件能编辑本地文件吗？</summary><p>可以。在 Chrome / Edge 中点击“打开本地仓库”并授权即可直接读写磁盘文件；Safari / Firefox 可拖入或选择文件夹，文件导入浏览器存储，并可导出为 ZIP。</p></details>
+  <details><summary>支持 VS Code 插件吗？</summary><p>支持从 VS Code Marketplace 和 Open VSX 在浏览器内安装插件。主题、语法高亮、代码片段和简单的浏览器插件可用；依赖 Node.js 或本地进程的插件不可用。</p></details>
+  <details><summary>能运行代码或使用终端吗？</summary><p>内置沙箱终端，支持 ls、cd、cat、find、git status 等文件命令；不支持运行任意程序，因为服务端不执行任何代码。</p></details>
+  <details><summary>手机上能用吗？</summary><p>可以。窄屏下自动切换为适合触屏的看代码模式，带底部导航、文件抽屉和全宽编辑器。</p></details>
+
+  <a class="cta" href="/">立即在浏览器中写代码</a>
+</main>
+<footer>
+  <p>WebIDE · 开放 · 隐私 · 轻量 · <a href="/en" hreflang="en" lang="en">English</a> · <a href="https://github.com/joinnymike-gif/webCoder" rel="noopener">GitHub</a> · <a href="/llms.txt">llms.txt</a></p>
+</footer>
+</body>
+</html>

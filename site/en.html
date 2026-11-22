@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebIDE — Free Online Code Editor &amp; VS Code-Style IDE in Your Browser</title>
+<meta name="description" content="WebIDE is a free, private, browser-based code editor. Open local folders or any public GitHub repo in a VS Code-style IDE with Monaco, extensions, search, diff and terminal. No install, no sign-up, files never leave your browser.">
+<link rel="canonical" href="%ORIGIN%/en">
+<link rel="alternate" hreflang="en" href="%ORIGIN%/en">
+<link rel="alternate" hreflang="zh-Hans" href="%ORIGIN%/zh">
+<link rel="alternate" hreflang="x-default" href="%ORIGIN%/en">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#060608">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="WebIDE">
+<meta property="og:title" content="WebIDE — Free Online Code Editor in Your Browser">
+<meta property="og:description" content="Open local folders or any public GitHub repo in a private, VS Code-style IDE. No install, no sign-up.">
+<meta property="og:url" content="%ORIGIN%/en">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="zh_CN">
+<meta name="twitter:card" content="summary">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebApplication",
+      "@id": "%ORIGIN%/#app",
+      "name": "WebIDE",
+      "url": "%ORIGIN%/",
+      "description": "Free, private, browser-based code editor and VS Code-style IDE. Open local folders or public GitHub repositories with Monaco Editor, VS Code extensions, full-text search, diff view and a sandbox terminal. All files stay in the browser.",
+      "applicationCategory": "DeveloperApplication",
+      "applicationSubCategory": "Online code editor / IDE",
+      "operatingSystem": "Any (modern web browser)",
+      "browserRequirements": "Requires JavaScript, IndexedDB. Chrome or Edge recommended for direct local folder read/write.",
+      "inLanguage": ["en", "zh-Hans"],
+      "isAccessibleForFree": true,
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "featureList": ["Monaco editor (same core as VS Code)", "Open local folders via File System Access API or drag and drop", "Open any public GitHub repository in the browser", "VS Code extension marketplace (themes, grammars, snippets)", "Full-text search and Quick Open", "Browser-local source control, diff and file history", "Markdown live preview", "Prettier formatting and TypeScript go-to-definition", "Sandbox terminal", "Export workspace as ZIP", "Mobile code browsing"],
+      "sameAs": ["https://github.com/joinnymike-gif/webCoder"]
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "%ORIGIN%/en#faq",
+      "mainEntity": [
+        { "@type": "Question", "name": "Is WebIDE free?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. WebIDE is free and open source. There is no account, sign-up or paid tier." } },
+        { "@type": "Question", "name": "Are my files uploaded to a server?", "acceptedAnswer": { "@type": "Answer", "text": "No. Local folders are read and written directly by your browser, and GitHub clones are stored in your browser's IndexedDB. The server only hosts the page and proxies public, read-only downloads; it stores nothing." } },
+        { "@type": "Question", "name": "How do I open a GitHub repository in the browser?", "acceptedAnswer": { "@type": "Answer", "text": "Open WebIDE, choose \"Open from GitHub\", and paste a repository such as owner/name or its github.com URL. WebIDE downloads the public ZIP archive and unpacks it in your browser so you can browse, search and edit the code." } },
+        { "@type": "Question", "name": "Can I edit local files without installing anything?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. In Chrome and Edge, \"Open Local Repository\" gives WebIDE read/write access to a folder you pick. In Safari and Firefox you can drag a folder in or pick it; files are imported into browser storage and can be exported as a ZIP." } },
+        { "@type": "Question", "name": "Does WebIDE support VS Code extensions?", "acceptedAnswer": { "@type": "Answer", "text": "WebIDE can install extensions from the VS Code Marketplace and Open VSX inside the browser. Color themes, language grammars, snippets and simple browser extensions work; extensions that need Node.js or a native process do not." } },
+        { "@type": "Question", "name": "Can I run code or a terminal?", "acceptedAnswer": { "@type": "Answer", "text": "WebIDE has a sandbox terminal with file commands such as ls, cd, cat, find and git status. It does not run arbitrary programs, because nothing executes on a server." } },
+        { "@type": "Question", "name": "Does it work on mobile?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. On narrow screens WebIDE switches to a touch-friendly code-browsing layout with a bottom dock, file drawer and full-width editor." } }
+      ]
+    }
+  ]
+}
+</script>
+<style>
+  :root { --bg:#060608; --card:#0d0d12; --border:#ffffff14; --fg:#d4d4e0; --strong:#fff; --dim:#9494a8; --grad:linear-gradient(135deg,#8b5cf6 0%,#3b82f6 55%,#06b6d4 100%); color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: radial-gradient(720px 360px at 50% 0, #8b5cf622, transparent 70%), var(--bg); color: var(--fg); font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #38bdf8; }
+  header, main, footer { width: min(860px, 100%); margin: 0 auto; padding: 0 20px; }
+  nav { display: flex; align-items: center; gap: 16px; padding: 18px 0; font-size: 14px; }
+  nav .brand { display: flex; align-items: center; gap: 10px; color: var(--strong); font-weight: 700; text-decoration: none; margin-right: auto; }
+  nav a { color: var(--dim); text-decoration: none; } nav a:hover { color: var(--strong); }
+  h1 { font-size: clamp(30px, 5vw, 46px); line-height: 1.15; letter-spacing: -.02em; color: var(--strong); margin: 48px 0 16px; }
+  h2 { font-size: 24px; color: var(--strong); margin: 56px 0 12px; letter-spacing: -.01em; }
+  h3 { font-size: 17px; color: var(--strong); margin: 0 0 6px; }
+  .lead { font-size: 18px; color: var(--fg); max-width: 720px; }
+  .cta { display: inline-flex; align-items: center; height: 44px; padding: 0 22px; border-radius: 10px; background: var(--grad); color: #fff; font-weight: 600; text-decoration: none; box-shadow: 0 4px 18px #6366f14d; margin: 12px 12px 0 0; }
+  .cta.sec { background: #ffffff0d; border: 1px solid var(--border); box-shadow: none; color: var(--fg); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .card p { margin: 0; color: var(--dim); font-size: 15px; }
+  ol { padding-left: 22px; } li { margin: 6px 0; }
+  details { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin: 10px 0; }
+  summary { cursor: pointer; color: var(--strong); font-weight: 600; }
+  details p { margin: 10px 0 0; color: var(--dim); }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; } th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--border); } th { color: var(--strong); }
+  footer { color: var(--dim); font-size: 14px; padding: 48px 20px; }
+</style>
+</head>
+<body>
+<header>
+  <nav aria-label="Primary">
+    <a class="brand" href="/"><img src="/favicon.svg" width="28" height="28" alt="">WebIDE</a>
+    <a href="#features">Features</a>
+    <a href="#faq">FAQ</a>
+    <a href="/zh" hreflang="zh-Hans" lang="zh-Hans">中文</a>
+  </nav>
+</header>
+<main>
+  <h1>Free online code editor and VS Code-style IDE that runs in your browser</h1>
+  <p class="lead"><strong>WebIDE</strong> is a free, private, browser-based IDE. Open a folder on your computer or any public GitHub repository and get a VS Code-style workspace — Monaco editor, file explorer, search, extensions, diff and terminal — with no install and no sign-up. Your files stay in your browser and are never uploaded.</p>
+  <a class="cta" href="/">Open WebIDE — it's free</a>
+  <a class="cta sec" href="https://github.com/joinnymike-gif/webCoder" rel="noopener">View source on GitHub</a>
+
+  <h2 id="features">Features</h2>
+  <div class="grid">
+    <div class="card"><h3>Monaco editor</h3><p>The editor core behind VS Code: syntax highlighting, IntelliSense-style completion, multi-cursor, Prettier formatting and TypeScript go-to-definition.</p></div>
+    <div class="card"><h3>Open local folders</h3><p>Read and write a real folder in Chrome or Edge, or drag a folder in from Finder or Explorer in Safari and Firefox.</p></div>
+    <div class="card"><h3>Open any GitHub repo</h3><p>Paste <code>owner/name</code> or a github.com URL to browse, search and edit a public repository right in the browser.</p></div>
+    <div class="card"><h3>VS Code extensions</h3><p>Install themes, language grammars and snippets from the VS Code Marketplace and Open VSX — unpacked in the browser.</p></div>
+    <div class="card"><h3>Source control &amp; history</h3><p>See changed files, side-by-side diffs, local commits and per-file history, then export the workspace as a ZIP.</p></div>
+    <div class="card"><h3>Private by design</h3><p>No accounts, no telemetry, no server storage. Workspaces live in IndexedDB in your own browser profile.</p></div>
+    <div class="card"><h3>Markdown preview</h3><p>Live side-by-side preview for README and docs with synchronized scrolling.</p></div>
+    <div class="card"><h3>Works on mobile</h3><p>A touch-friendly layout for reading code on a phone, with a file drawer and full-width editor.</p></div>
+  </div>
+
+  <h2 id="how-to">How to open a GitHub repository in your browser</h2>
+  <ol>
+    <li>Go to <a href="/">WebIDE</a>.</li>
+    <li>Click <strong>Open from GitHub</strong>.</li>
+    <li>Paste the repository, for example <code>microsoft/vscode</code> or <code>https://github.com/microsoft/vscode</code>, and pick a branch if you want.</li>
+    <li>Browse files, press <kbd>⌘P</kbd> / <kbd>Ctrl+P</kbd> to jump to a file, or <kbd>⇧⌘F</kbd> / <kbd>Ctrl+Shift+F</kbd> to search the whole repo.</li>
+  </ol>
+
+  <h2 id="local">How to edit a local folder without installing an IDE</h2>
+  <ol>
+    <li>Open <a href="/">WebIDE</a> in Chrome or Edge and click <strong>Open Local Repository</strong> (or press <kbd>⌘O</kbd> / <kbd>Ctrl+O</kbd>).</li>
+    <li>Pick a folder and allow edit access when the browser asks.</li>
+    <li>Edit and save with <kbd>⌘S</kbd> / <kbd>Ctrl+S</kbd> — changes are written straight to disk.</li>
+  </ol>
+
+  <h2 id="compare">WebIDE compared with a desktop IDE</h2>
+  <table>
+    <thead><tr><th></th><th>WebIDE</th><th>Desktop IDE</th></tr></thead>
+    <tbody>
+      <tr><td>Install</td><td>None — open a URL</td><td>Download and install</td></tr>
+      <tr><td>Account</td><td>Not needed</td><td>Often optional</td></tr>
+      <tr><td>Open a GitHub repo</td><td>Paste a URL</td><td>git clone first</td></tr>
+      <tr><td>Run programs / debugger</td><td>No (sandbox terminal only)</td><td>Yes</td></tr>
+      <tr><td>Best for</td><td>Reading, reviewing and quick edits anywhere</td><td>Full development with builds and debugging</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="faq">Frequently asked questions</h2>
+  <details open><summary>Is WebIDE free?</summary><p>Yes. WebIDE is free and open source. There is no account, sign-up or paid tier.</p></details>
+  <details><summary>Are my files uploaded to a server?</summary><p>No. Local folders are read and written directly by your browser, and GitHub clones are stored in your browser's IndexedDB. The server only hosts the page and proxies public, read-only downloads; it stores nothing.</p></details>
+  <details><summary>How do I open a GitHub repository in the browser?</summary><p>Open WebIDE, choose "Open from GitHub", and paste a repository such as owner/name or its github.com URL. WebIDE downloads the public ZIP archive and unpacks it in your browser so you can browse, search and edit the code.</p></details>
+  <details><summary>Can I edit local files without installing anything?</summary><p>Yes. In Chrome and Edge, "Open Local Repository" gives WebIDE read/write access to a folder you pick. In Safari and Firefox you can drag a folder in or pick it; files are imported into browser storage and can be exported as a ZIP.</p></details>
+  <details><summary>Does WebIDE support VS Code extensions?</summary><p>WebIDE can install extensions from the VS Code Marketplace and Open VSX inside the browser. Color themes, language grammars, snippets and simple browser extensions work; extensions that need Node.js or a native process do not.</p></details>
+  <details><summary>Can I run code or a terminal?</summary><p>WebIDE has a sandbox terminal with file commands such as ls, cd, cat, find and git status. It does not run arbitrary programs, because nothing executes on a server.</p></details>
+  <details><summary>Does it work on mobile?</summary><p>Yes. On narrow screens WebIDE switches to a touch-friendly code-browsing layout with a bottom dock, file drawer and full-width editor.</p></details>
+
+  <a class="cta" href="/">Start coding in your browser</a>
+</main>
+<footer>
+  <p>WebIDE · Open. Private. Light. · <a href="/zh" hreflang="zh-Hans" lang="zh-Hans">中文</a> · <a href="https://github.com/joinnymike-gif/webCoder" rel="noopener">GitHub</a> · <a href="/llms.txt">llms.txt</a></p>
+</footer>
+</body>
+</html>

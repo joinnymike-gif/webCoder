@@ -3,7 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>WebIDE</title>
+<title>WebIDE — Free Online Code Editor &amp; Browser IDE | 在线代码编辑器</title>
+<meta name="description" content="Free, private VS Code-style IDE in your browser. Open local folders or any public GitHub repo — Monaco editor, extensions, search, diff and terminal. No install, no sign-up. 免费在线代码编辑器，浏览器即开即用。">
+<link rel="canonical" href="%ORIGIN%/">
+<link rel="alternate" hreflang="en" href="%ORIGIN%/en">
+<link rel="alternate" hreflang="zh-Hans" href="%ORIGIN%/zh">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#060608">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="WebIDE">
+<meta property="og:title" content="WebIDE — Free Online Code Editor in Your Browser">
+<meta property="og:description" content="Open local folders or any public GitHub repo in a private, VS Code-style IDE. No install, no sign-up.">
+<meta property="og:url" content="%ORIGIN%/">
+<meta name="twitter:card" content="summary">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+{"@type":"WebSite","@id":"%ORIGIN%/#website","name":"WebIDE","url":"%ORIGIN%/","inLanguage":["en","zh-Hans"]},
+{"@type":"WebApplication","@id":"%ORIGIN%/#app","name":"WebIDE","url":"%ORIGIN%/","description":"Free, private, browser-based code editor and VS Code-style IDE for local folders and public GitHub repositories.","applicationCategory":"DeveloperApplication","operatingSystem":"Any (modern web browser)","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"sameAs":["https://github.com/joinnymike-gif/webCoder"]}
+]}
+</script>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <style>
@@ -285,6 +303,9 @@
   .home-btn .codicon[class*='codicon-'] { font-size: 18px; }
   .home-keys { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 20px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--dim); font-size: 12px; width: 100%; }
   .home-keys span { display: inline-flex; align-items: center; gap: 6px; }
+  .home-links { margin: 14px 0 0; font-size: 12px; color: var(--faint); text-align: center; }
+  .home-links a { color: var(--dim); text-decoration: none; } .home-links a:hover { color: var(--strong); }
+  noscript p { max-width: 640px; margin: 40px auto; padding: 0 20px; font-size: 15px; line-height: 1.6; }
   #loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); background: var(--bg); }
   /* Monaco's codicon rule (.codicon[class*='codicon-'], loaded later) sets a 16px font; re-assert our sizes with higher specificity. */
   .act .codicon[class*='codicon-'] { font-size: 24px; }
@@ -438,6 +459,7 @@
 </style>
 </head>
 <body>
+<noscript><p><strong>WebIDE</strong> is a free, private, VS Code-style code editor that runs in your browser: open local folders or any public GitHub repository with no install and no sign-up. JavaScript is required to run the editor. Learn more: <a href="/en">About WebIDE</a> · <a href="/zh">中文介绍</a> · <a href="/llms.txt">llms.txt</a></p></noscript>
 <div id="app">
   <nav id="activity">
     <button id="act-home" title="WebIDE Home — Open · Private · Light" aria-label="WebIDE Home">
@@ -552,6 +574,7 @@
             <button class="home-btn" id="home-open-github"><span class="codicon codicon-github"></span><span>从 GitHub 打开</span></button>
           </div>
           <div class="home-keys" id="home-keys"></div>
+          <p class="home-links"><a href="/en">About</a> · <a href="/zh" hreflang="zh-Hans">中文介绍</a> · <a href="/en#faq">FAQ</a> · <a href="https://github.com/joinnymike-gif/webCoder" target="_blank" rel="noopener">GitHub</a></p>
         </div>
       </div>
       <div id="loading">Loading editor…</div>
@@ -653,6 +676,7 @@
 <!-- xterm.js loads lazily when Terminal is opened so initial IDE boot never blocks on it -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js" defer></script>
 <script>
+const HOME_TITLE = document.title; // SEO title from <head>, restored on the Home view
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const enc = encodeURIComponent;
@@ -1725,7 +1749,7 @@ async function restoreProject(projRoot) {
   $('#ws').hidden = !root; $('#welcome').hidden = !!root;
   $('#ws-name').textContent = snap.name;
   $('#ws-head').title = `${snap.name} (Browser-Local)`;
-  document.title = root ? `${snap.name} — WebIDE` : 'WebIDE';
+  document.title = root ? `${snap.name} — WebIDE` : HOME_TITLE;
   sr.last = null; $('#sr-res').replaceChildren(); $('#sr-msg').textContent = '';
   if (isMobileUI()) { mobDrawer = !snap.tabs.length; if (mobDrawer) prefs.view = 'explorer'; }
   showHome(false);
@@ -1777,7 +1801,7 @@ async function closeProject(projRoot) {
       expanded.clear(); selected = null; recent.length = 0;
       $('#ws').hidden = true; $('#welcome').hidden = false;
       $('#ws-name').textContent = ''; $('#ws-head').title = '';
-      document.title = 'WebIDE';
+      document.title = HOME_TITLE;
       updateStatus();
       sr.last = null; $('#sr-res').replaceChildren(); $('#sr-msg').textContent = '';
       $('#git-list').replaceChildren(); gitState = null; gitCommits = [];
@@ -1811,7 +1835,7 @@ async function loadRoot(prefetched = null) {
     expanded.clear(); selected = null; recent.length = 0;
     $('#ws').hidden = true; $('#welcome').hidden = false;
     $('#ws-name').textContent = ''; $('#ws-head').title = '';
-    document.title = 'WebIDE';
+    document.title = HOME_TITLE;
     updateStatus();
     showHome(true);
     renderProjectBar();
