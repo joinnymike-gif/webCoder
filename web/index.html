@@ -500,6 +500,7 @@
     <span class="si remote" title="All workspaces, files & extensions live only in your browser"><span class="codicon codicon-shield"></span>Browser-Local</span>
     <button class="si" id="st-root" title="Open Local Folder…"></button>
     <button class="si" id="st-git" title="Checkout Branch…" hidden></button>
+    <button class="si" id="st-prob" title="Next Problem (Extension Diagnostics)" hidden></button>
     <button class="si" id="st-sync" title="Export / Sync" hidden></button>
     <span class="sp"></span>
     <button class="si" id="st-pos" title="Go to Line" hidden></button>
@@ -1567,11 +1568,18 @@ async function readFile(rel) {
 }
 const fileText = t => (t.model ? t.model.getValue(monaco.editor.EndOfLinePreference.TextDefined, true) : (t.text ?? '')); // keeps the file's own EOL + BOM
 
+function modelChangeHandler(rel, t, e) {
+  if (!t.reloading) t.preview = false;
+  renderTabs();
+  renderProjectBar();
+  if (t.model && typeof extBus !== 'undefined') extBus.fire('changeDoc', { rel, model: t.model, e });
+}
 function newModel(rel, text, etag = null) {
   if (!editor) return { model: null, text, saved: 0, etag, view: null, bom: text.charCodeAt(0) === 0xfeff, preview: false, reloading: false, dirty: false };
   const model = monaco.editor.createModel(text, undefined, monaco.Uri.file('/' + rel));
   const t = { model, saved: model.getAlternativeVersionId(), etag, view: null, bom: text.charCodeAt(0) === 0xfeff, preview: false, reloading: false, dirty: false };
-  model.onDidChangeContent(() => { if (!t.reloading) t.preview = false; renderTabs(); renderProjectBar(); }); // typing pins a preview tab
+  model.onDidChangeContent(e => modelChangeHandler(rel, t, e)); // typing pins a preview tab
+  if (typeof extBus !== 'undefined') extBus.fire('openDoc', { rel, model });
   return t;
 }
 async function ensureTabModel(rel, t) {
@@ -1586,7 +1594,8 @@ async function ensureTabModel(rel, t) {
   t.model = model;
   t.saved = t.dirty ? -1 : model.getAlternativeVersionId();
   delete t.text;
-  model.onDidChangeContent(() => { if (!t.reloading) t.preview = false; renderTabs(); renderProjectBar(); });
+  model.onDidChangeContent(e => modelChangeHandler(rel, t, e));
+  if (typeof extBus !== 'undefined') extBus.fire('openDoc', { rel, model });
   return model;
 }
 // preview: single-click style open. At most one preview tab exists; the next preview open replaces it in place.
@@ -1645,6 +1654,7 @@ async function activate(rel, { noReveal = false } = {}) {
   $('#tabs').hidden = $('#crumbs').hidden = !tabs.size;
   renderTabs(); renderCrumbs(); updateStatus();
   if (t) { if (!noReveal) reveal(active); editor?.focus(); }
+  if (typeof extBus !== 'undefined') extBus.fire('activeEditor', { rel: active, model: t?.model || null });
 }
 // Returns false if the user cancelled. force = drop without asking (only where the content is already safe).
 async function closeTab(rel, force = false) {
@@ -1661,6 +1671,7 @@ async function closeTab(rel, force = false) {
   const keys = [...tabs.keys()], i = keys.indexOf(rel);
   tabs.delete(rel);
   if (active === rel) { active = null; await activate(keys[i + 1] ?? keys[i - 1] ?? null); } else renderTabs();
+  if (t.model && typeof extBus !== 'undefined') extBus.fire('closeDoc', { rel, model: t.model });
   t.model?.dispose();
   renderProjectBar();
   return true;
@@ -1754,6 +1765,7 @@ async function saveTab(rel, force = false) {
   }
   t.saved = version; t.dirty = false; renderTabs(); renderProjectBar();
   scheduleGitRefresh();
+  if (t.model && typeof extBus !== 'undefined') extBus.fire('saveDoc', { rel, model: t.model });
   return true;
 }
 const save = () => (diff?.kind === 'conflict' && diff.rel === active ? keepMine() : active ? saveTab(active) : Promise.resolve());
@@ -3340,6 +3352,51 @@ function registerLangContributions(ext, disposables) {
   }
 }
 
+const extBus = {
+  _map: new Map(), // channel -> Set<{ extDir, fn }>
+  on(ch, extDir, fn, disposables) {
+    if (!this._map.has(ch)) this._map.set(ch, new Set());
+    const rec = { extDir, fn };
+    this._map.get(ch).add(rec);
+    const d = { dispose: () => this._map.get(ch)?.delete(rec) };
+    if (Array.isArray(disposables)) disposables.push(d);
+    return d;
+  },
+  fire(ch, payload, onlyExtDir = null) {
+    const ls = this._map.get(ch);
+    if (!ls?.size) return;
+    for (const rec of [...ls]) {
+      if (onlyExtDir && rec.extDir !== onlyExtDir) continue;
+      try { rec.fn(payload); } catch (e) { console.warn('extBus listener error:', ch, e); }
+    }
+  },
+};
+const extDiagRegistry = new Map(); // owner -> Map<normPath, { raw: Diagnostic[], markers: IMarkerData[] }>
+const extTaskProviders = [];
+
+function refreshProblemsStatus() {
+  const btn = $('#st-prob');
+  if (!btn || !window.monaco || !editor) return;
+  const markers = monaco.editor.getModelMarkers({});
+  if (!markers.length) { btn.hidden = true; return; }
+  let errs = 0, warns = 0;
+  for (const m of markers) {
+    if (m.severity >= monaco.MarkerSeverity.Error) errs++;
+    else if (m.severity >= monaco.MarkerSeverity.Warning) warns++;
+  }
+  const infos = markers.length - errs - warns;
+  btn.hidden = false;
+  const parts = [];
+  if (errs) parts.push(`${errs}E`);
+  if (warns || !errs) parts.push(`${warns + (warns || errs ? 0 : infos)}W`);
+  btn.replaceChildren(icon('warning', errs ? 'err' : 'warn'), el('span', '', parts.join(' ')));
+}
+$('#st-prob').onclick = () => {
+  if (!editor || !active) return;
+  editor.focus();
+  editor.getAction('editor.action.marker.next')?.run();
+};
+
 function createVscodeApi(ext, disposables, cmdMap) {
   class Disposable { constructor(fn) { this._fn = fn; } dispose() { try { this._fn?.(); } catch {} } static from(...ds) { return new Disposable(() => ds.forEach(d => d?.dispose?.())); } }
   class EventEmitter {
@@ -3347,65 +3404,214 @@ function createVscodeApi(ext, disposables, cmdMap) {
     fire(v) { for (const f of [...this._ls]) try { f(v); } catch {} }
     dispose() { this._ls.clear(); }
   }
-  class Position { constructor(line, character) { this.line = line; this.character = character; } translate(dl = 0, dc = 0) { return new Position(this.line + dl, this.character + dc); } with(l = this.line, c = this.character) { return new Position(l, c); } isEqual(o) { return o && o.line === this.line && o.character === this.character; } }
-  class Range { constructor(a, b, c, d) { this.start = typeof a === 'number' ? new Position(a, b) : a; this.end = typeof a === 'number' ? new Position(c, d) : b; } get isEmpty() { return this.start.line === this.end.line && this.start.character === this.end.character; } }
-  class Selection extends Range { constructor(a, b, c, d) { super(a, b, c, d); this.anchor = this.start; this.active = this.end; } }
+  class Position {
+    constructor(line, character) { this.line = line; this.character = character; }
+    translate(dl = 0, dc = 0) { return new Position(this.line + dl, this.character + dc); }
+    with(l = this.line, c = this.character) { return new Position(l, c); }
+    compareTo(o) { return this.line !== o.line ? this.line - o.line : this.character - o.character; }
+    isBefore(o) { return this.compareTo(o) < 0; }
+    isBeforeOrEqual(o) { return this.compareTo(o) <= 0; }
+    isAfter(o) { return this.compareTo(o) > 0; }
+    isAfterOrEqual(o) { return this.compareTo(o) >= 0; }
+    isEqual(o) { return !!o && o.line === this.line && o.character === this.character; }
+  }
+  class Range {
+    constructor(a, b, c, d) {
+      const p1 = typeof a === 'number' ? new Position(a, b) : (a instanceof Position ? a : new Position(a?.line ?? 0, a?.character ?? 0));
+      const p2 = typeof a === 'number' ? new Position(c, d) : (b instanceof Position ? b : new Position(b?.line ?? p1.line, b?.character ?? p1.character));
+      if (p1.isAfter(p2)) { this.start = p2; this.end = p1; } else { this.start = p1; this.end = p2; }
+    }
+    get isEmpty() { return this.start.isEqual(this.end); }
+    get isSingleLine() { return this.start.line === this.end.line; }
+    contains(posOrRange) {
+      if (posOrRange?.start && posOrRange?.end) return !posOrRange.start.isBefore(this.start) && !posOrRange.end.isAfter(this.end);
+      return !posOrRange.isBefore(this.start) && !posOrRange.isAfter(this.end);
+    }
+    isEqual(o) { return !!o && this.start.isEqual(o.start) && this.end.isEqual(o.end); }
+    intersection(o) { const s = this.start.isAfter(o.start) ? this.start : o.start, e = this.end.isBefore(o.end) ? this.end : o.end; return s.isAfter(e) ? undefined : new Range(s, e); }
+    union(o) { return new Range(this.start.isBefore(o.start) ? this.start : o.start, this.end.isAfter(o.end) ? this.end : o.end); }
+    with(s, e) {
+      if (s && typeof s === 'object' && !('line' in s) && ('start' in s || 'end' in s)) {
+        return new Range(s.start ?? this.start, s.end ?? this.end);
+      }
+      return new Range(s ?? this.start, e ?? this.end);
+    }
+  }
+  class Selection extends Range {
+    constructor(a, b, c, d) {
+      super(a, b, c, d);
+      this.anchor = typeof a === 'number' ? new Position(a, b) : new Position(a?.line ?? 0, a?.character ?? 0);
+      this.active = typeof a === 'number' ? new Position(c, d) : new Position(b?.line ?? 0, b?.character ?? 0);
+    }
+    get isReversed() { return this.active.isBefore(this.anchor); }
+  }
   class TextEdit { constructor(range, newText) { this.range = range; this.newText = newText; } static replace(r, t) { return new TextEdit(r, t); } static insert(p, t) { return new TextEdit(new Range(p, p), t); } static delete(r) { return new TextEdit(r, ''); } }
-  class WorkspaceEdit { constructor() { this._edits = []; } replace(u, r, t) { this._edits.push({ u, r, t }); } insert(u, p, t) { this._edits.push({ u, r: new Range(p, p), t }); } delete(u, r) { this._edits.push({ u, r, t: '' }); } entries() { return []; } }
+  class WorkspaceEdit {
+    constructor() { this._edits = []; }
+    replace(u, r, t) { this._edits.push({ u, r, t }); }
+    insert(u, p, t) { this._edits.push({ u, r: new Range(p, p), t }); }
+    delete(u, r) { this._edits.push({ u, r, t: '' }); }
+    entries() {
+      const m = new Map();
+      for (const e of this._edits) { const k = String(e.u || ''); if (!m.has(k)) m.set(k, [e.u, []]); m.get(k)[1].push(new TextEdit(e.r, e.t)); }
+      return [...m.values()];
+    }
+  }
+  class Diagnostic {
+    constructor(range, message, severity = 0) { this.range = range; this.message = message; this.severity = severity; this.source = ''; this.code = undefined; this.tags = []; }
+  }
+  class CodeActionKind {
+    constructor(value) { this.value = value; }
+    append(part) { return new CodeActionKind(this.value ? `${this.value}.${part}` : part); }
+    contains(o) { const v = typeof o === 'string' ? o : o?.value || ''; return this.value === v || v.startsWith(this.value + '.'); }
+  }
+  CodeActionKind.Empty = new CodeActionKind('');
+  CodeActionKind.QuickFix = new CodeActionKind('quickfix');
+  CodeActionKind.Refactor = new CodeActionKind('refactor');
+  CodeActionKind.RefactorExtract = new CodeActionKind('refactor.extract');
+  CodeActionKind.RefactorInline = new CodeActionKind('refactor.inline');
+  CodeActionKind.RefactorRewrite = new CodeActionKind('refactor.rewrite');
+  CodeActionKind.Source = new CodeActionKind('source');
+  CodeActionKind.SourceOrganizeImports = new CodeActionKind('source.organizeImports');
+  CodeActionKind.SourceFixAll = new CodeActionKind('source.fixAll');
+  class CodeAction { constructor(title, kind) { this.title = title; this.kind = kind; this.diagnostics = []; this.isPreferred = false; } }
+  class RelativePattern { constructor(base, pattern) { this.baseUri = typeof base === 'string' ? Uri.file(base) : (base?.uri || base); this.base = this.baseUri?.path || '/'; this.pattern = pattern; } }
+  class CustomExecution { constructor(cb) { this._cb = cb; } }
+  class Task { constructor(def, scope, name, source, execution, problemMatchers) { Object.assign(this, { definition: def, scope, name, source, execution, problemMatchers }); } }
   class MarkdownString { constructor(value = '') { this.value = value; } appendText(s) { this.value += s; return this; } appendMarkdown(s) { this.value += s; return this; } }
   class Hover { constructor(contents, range) { this.contents = Array.isArray(contents) ? contents : [contents]; this.range = range; } }
   class CompletionItem { constructor(label, kind) { this.label = label; this.kind = kind; } }
   class SnippetString { constructor(value = '') { this.value = value; } }
   class CancellationTokenSource { constructor() { this.token = { isCancellationRequested: false, onCancellationRequested: () => new Disposable() }; } cancel() { this.token.isCancellationRequested = true; } dispose() {} }
+  const normUriPath = p => {
+    let s = String(p || '');
+    if (s.startsWith('file://')) s = s.slice(7);
+    s = s.replace(/\\/g, '/').replace(/\/+/g, '/');
+    return s.startsWith('/') ? s : '/' + s;
+  };
+  const makeUri = (scheme, pathStr, query = '', fragment = '') => {
+    const p = scheme === 'file' ? normUriPath(pathStr) : String(pathStr || '');
+    return {
+      scheme, path: p, fsPath: p, authority: '', query, fragment,
+      toString: () => (scheme === 'file' ? 'file://' + p : `${scheme}:${p}`) + (query ? '?' + query : '') + (fragment ? '#' + fragment : ''),
+      with(ch = {}) { return makeUri(ch.scheme ?? scheme, ch.path ?? p, ch.query ?? query, ch.fragment ?? fragment); },
+    };
+  };
   const Uri = {
-    file: p => ({ scheme: 'file', path: p, fsPath: p, toString: () => 'file://' + p }),
-    parse: s => ({ scheme: s.split(':')[0] || 'file', path: s, fsPath: s, toString: () => s }),
-    joinPath: (u, ...parts) => Uri.file([u.path || '', ...parts].join('/').replace(/\/+/g, '/')),
+    file: p => makeUri('file', normUriPath(p)),
+    parse: s => {
+      const raw = String(s || '');
+      const m = raw.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):(\/\/[^/?#]*)?([^?#]*)(?:\?([^#]*))?(?:#(.*))?$/);
+      if (!m) return makeUri('file', normUriPath(raw));
+      return makeUri(m[1], m[3] || '/', m[4] || '', m[5] || '');
+    },
+    joinPath: (u, ...parts) => makeUri(u?.scheme || 'file', [u?.path || '/', ...parts].join('/').replace(/\/+/g, '/')),
   };
   const toMRange = r => r ? { startLineNumber: (r.start?.line ?? 0) + 1, startColumn: (r.start?.character ?? 0) + 1, endLineNumber: (r.end?.line ?? 0) + 1, endColumn: (r.end?.character ?? 0) + 1 } : undefined;
   const fromMPos = p => new Position((p?.lineNumber ?? 1) - 1, (p?.column ?? 1) - 1);
   const fromMRange = r => new Range((r.startLineNumber ?? 1) - 1, (r.startColumn ?? 1) - 1, (r.endLineNumber ?? 1) - 1, (r.endColumn ?? 1) - 1);
-  const wrapDoc = (rel, model) => ({
-    uri: Uri.file((root || '') + '/' + rel), fileName: rel, languageId: model.getLanguageId(),
-    lineCount: model.getLineCount(), version: model.getVersionId(), isDirty: tabs.get(rel)?.dirty || false,
-    getText: r => (r ? model.getValueInRange(toMRange(r)) : model.getValue()),
-    lineAt: n => { const ln = (typeof n === 'number' ? n : n.line) + 1; const txt = model.getLineContent(ln); return { lineNumber: ln - 1, text: txt, range: new Range(ln - 1, 0, ln - 1, txt.length) }; },
-    positionAt: off => fromMPos(model.getPositionAt(off)),
-    offsetAt: pos => model.getOffsetAt({ lineNumber: pos.line + 1, column: pos.character + 1 }),
-  });
-  const activeEditorWrap = () => {
-    const model = editor?.getModel();
-    if (!model || model === blankModel) return undefined;
-    const rel = active || [...tabs.entries()].find(([, t]) => t.model === model)?.[0] || 'untitled';
-    const sel = editor.getSelection();
+  const wrapDoc = (rel, model) => {
+    const cleanRel = String(rel || '').replace(/^\/+/, '');
+    const uri = Uri.file('/' + cleanRel);
+    return {
+      uri, fileName: uri.path, languageId: model.getLanguageId(),
+      lineCount: model.getLineCount(), version: model.getVersionId(),
+      isDirty: tabs.get(cleanRel)?.dirty || false, isUntitled: false,
+      eol: model.getEOL() === '\r\n' ? 2 : 1,
+      getText: r => (r ? model.getValueInRange(toMRange(r)) : model.getValue()),
+      lineAt: n => {
+        const ln = (typeof n === 'number' ? n : n.line) + 1;
+        const txt = ln >= 1 && ln <= model.getLineCount() ? model.getLineContent(ln) : '';
+        const range = new Range(ln - 1, 0, ln - 1, txt.length);
+        return {
+          lineNumber: ln - 1, text: txt, range,
+          rangeIncludingLineBreak: ln < model.getLineCount() ? new Range(ln - 1, 0, ln, 0) : range,
+          firstNonWhitespaceCharacterIndex: txt.search(/\S|$/),
+          isEmptyOrWhitespace: !/\S/.test(txt),
+        };
+      },
+      positionAt: off => fromMPos(model.getPositionAt(off)),
+      offsetAt: pos => model.getOffsetAt({ lineNumber: pos.line + 1, column: pos.character + 1 }),
+      validateRange: r => new Range(Math.max(0, r.start.line), Math.max(0, r.start.character), Math.max(0, r.end.line), Math.max(0, r.end.character)),
+      validatePosition: p => new Position(Math.max(0, p.line), Math.max(0, p.character)),
+      getWordRangeAtPosition: p => {
+        const w = model.getWordAtPosition({ lineNumber: p.line + 1, column: p.character + 1 });
+        return w ? new Range(p.line, w.startColumn - 1, p.line, w.endColumn - 1) : undefined;
+      },
+      save: () => saveTab(cleanRel),
+    };
+  };
+  const editorForDoc = (rel, model) => {
+    const sel = rel === active && editor ? editor.getSelection() : null;
     return {
       document: wrapDoc(rel, model),
       selection: sel ? new Selection(fromMPos(sel.getStartPosition()), fromMPos(sel.getEndPosition())) : new Selection(0, 0, 0, 0),
-      selections: (editor.getSelections() || []).map(s => new Selection(fromMPos(s.getStartPosition()), fromMPos(s.getEndPosition()))),
+      selections: (rel === active && editor ? editor.getSelections() : [])?.map(s => new Selection(fromMPos(s.getStartPosition()), fromMPos(s.getEndPosition()))) || [new Selection(0, 0, 0, 0)],
       options: { tabSize: model.getOptions().tabSize, insertSpaces: model.getOptions().insertSpaces },
       edit(cb) {
         const ops = [];
         cb({
-          replace: (target, text) => ops.push({ range: toMRange(target.line != null ? new Range(target, target) : target), text }),
+          replace: (target, text) => ops.push({ range: toMRange(target?.line != null ? new Range(target, target) : target), text }),
           insert: (pos, text) => ops.push({ range: toMRange(new Range(pos, pos)), text }),
           delete: range => ops.push({ range: toMRange(range), text: '' }),
         });
-        if (ops.length) editor.executeEdits(ext.dir, ops);
+        if (ops.length && editor) {
+          if (editor.getModel() === model) editor.executeEdits(ext.dir, ops);
+          else model.pushEditOperations([], ops, () => null);
+        }
         return Promise.resolve(true);
       },
     };
   };
+  const activeEditorWrap = () => {
+    const model = editor?.getModel();
+    if (!model || model === blankModel) return undefined;
+    const rel = active || [...tabs.entries()].find(([, t]) => t.model === model)?.[0] || '';
+    return rel ? editorForDoc(rel, model) : undefined;
+  };
+  const visibleEditorsWrap = () => {
+    const e = activeEditorWrap();
+    return e ? [e] : [];
+  };
+  const matchSel = (sel, model) => {
+    const list = Array.isArray(sel) ? sel : [sel];
+    const lang = model.getLanguageId(), p = model.uri.path;
+    return list.some(s => (typeof s === 'string' ? s === lang : (!s?.language || s.language === lang) && (!s?.pattern || p.endsWith(s.pattern.replace(/^\*+/, '')))));
+  };
+  const selectorLangs = sel => {
+    const list = Array.isArray(sel) ? sel : [sel];
+    const out = new Set();
+    for (const s of list) {
+      if (typeof s === 'string') out.add(s);
+      else if (s?.language) out.add(s.language);
+    }
+    return out.size ? [...out] : ['markdown', 'plaintext'];
+  };
   const cfgKey = sec => 'webideCfg:' + (sec || '');
-  const onDidChangeTextDocument = new EventEmitter();
   const onDidChangeConfiguration = new EventEmitter();
-  disposables.push(onDidChangeTextDocument, onDidChangeConfiguration);
+  disposables.push(onDidChangeConfiguration);
+  const wsFolder = () => (root ? { uri: Uri.file('/'), name: activeProj()?.name || 'workspace', index: 0 } : undefined);
+  const noopEv = () => new Disposable();
+
   return {
     version: '1.95.0',
-    Disposable, EventEmitter, Position, Range, Selection, TextEdit, WorkspaceEdit, MarkdownString, Hover, CompletionItem, SnippetString, CancellationTokenSource, Uri,
+    Disposable, EventEmitter, Position, Range, Selection, TextEdit, WorkspaceEdit, Diagnostic, CodeAction, CodeActionKind,
+    RelativePattern, CustomExecution, Task, MarkdownString, Hover, CompletionItem, SnippetString, CancellationTokenSource, Uri,
     CompletionItemKind: { Text: 0, Method: 1, Function: 2, Constructor: 3, Field: 4, Variable: 5, Class: 6, Interface: 7, Module: 8, Property: 9, Unit: 10, Value: 11, Enum: 12, Keyword: 13, Snippet: 14, Color: 15, File: 16, Reference: 17 },
     DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
+    DiagnosticTag: { Unnecessary: 1, Deprecated: 2 },
+    FileType: { Unknown: 0, File: 1, Directory: 2, SymbolicLink: 64 },
+    TaskScope: { Global: 1, Workspace: 2 },
     StatusBarAlignment: { Left: 1, Right: 2 },
     EndOfLine: { LF: 1, CRLF: 2 },
+    env: { uiKind: 2, appName: 'WebIDE', language: navigator.language || 'en' },
+    extensions: {
+      get all() { return installedExts.map(e => ({ id: e.id, isActive: extActive.has(e.dir), packageJSON: { name: e.id, version: e.version, contributes: {} } })); },
+      getExtension(id) {
+        const e = installedExts.find(x => x.id.toLowerCase() === String(id || '').toLowerCase());
+        return e ? { id: e.id, isActive: extActive.has(e.dir), exports: extActive.get(e.dir)?.exports, packageJSON: { name: e.id, version: e.version, contributes: {} } } : undefined;
+      },
+    },
     commands: {
       registerCommand(id, fn) {
         cmdMap.set(id, fn);
@@ -3423,45 +3629,249 @@ function createVscodeApi(ext, disposables, cmdMap) {
     },
     window: {
       get activeTextEditor() { return activeEditorWrap(); },
-      get visibleTextEditors() { const e = activeEditorWrap(); return e ? [e] : []; },
+      get visibleTextEditors() { return visibleEditorsWrap(); },
       showInformationMessage: (msg, ...items) => { toast(String(msg)); return Promise.resolve(typeof items[0] === 'string' ? items[0] : undefined); },
       showWarningMessage: (msg, ...items) => { toast(String(msg), 'warn'); return Promise.resolve(typeof items[0] === 'string' ? items[0] : undefined); },
       showErrorMessage: (msg, ...items) => { toast(String(msg), 'error'); return Promise.resolve(typeof items[0] === 'string' ? items[0] : undefined); },
       showQuickPick: (items = []) => Promise.resolve(Array.isArray(items) ? items[0] : undefined),
       showInputBox: (opts = {}) => Promise.resolve(opts.value ?? ''),
-      createOutputChannel: () => ({ append() {}, appendLine() {}, clear() {}, show() {}, hide() {}, dispose() {} }),
+      showTextDocument: async docOrUri => {
+        const targetPath = normUriPath(docOrUri?.uri ? docOrUri.uri.path : docOrUri?.path || docOrUri).replace(/^\/+/, '');
+        if (targetPath) await openFile(targetPath);
+        return activeEditorWrap();
+      },
+      createOutputChannel: name => ({
+        name,
+        append() {},
+        appendLine(s) { if (typeof s === 'string' && /ERROR:/i.test(s)) console.warn(`[${name}]`, s); },
+        replace() {}, clear() {}, show() {}, hide() {}, dispose() {},
+      }),
       createStatusBarItem: () => ({ text: '', tooltip: '', command: '', show() {}, hide() {}, dispose() {} }),
-      onDidChangeActiveTextEditor: () => new Disposable(),
-      onDidChangeTextEditorSelection: () => new Disposable(),
+      onDidChangeActiveTextEditor: (fn, thisArg, ds) => extBus.on('activeEditor', ext.dir, p => fn.call(thisArg, p?.model ? editorForDoc(p.rel, p.model) : undefined), ds || disposables),
+      onDidChangeVisibleTextEditors: (fn, thisArg, ds) => extBus.on('activeEditor', ext.dir, () => fn.call(thisArg, visibleEditorsWrap()), ds || disposables),
+      onDidChangeTextEditorSelection: (fn, thisArg, ds) => extBus.on('selection', ext.dir, () => { const ed = activeEditorWrap(); if (ed) fn.call(thisArg, { textEditor: ed, selections: ed.selections }); }, ds || disposables),
     },
     workspace: {
-      get workspaceFolders() { return root ? [{ uri: Uri.file(root), name: base(root), index: 0 }] : undefined; },
-      get textDocuments() { return [...tabs.entries()].map(([rel, t]) => wrapDoc(rel, t.model)); },
+      isTrusted: true,
+      get workspaceFolders() { const w = wsFolder(); return w ? [w] : undefined; },
+      getWorkspaceFolder: () => wsFolder(),
+      asRelativePath: p => String(typeof p === 'string' ? p : p?.path || '').replace(/^\/+/, ''),
+      get textDocuments() { return [...tabs.entries()].filter(([, t]) => t.model).map(([rel, t]) => wrapDoc(rel, t.model)); },
+      openTextDocument: async uriOrPath => {
+        const rel = normUriPath(uriOrPath?.path || uriOrPath).replace(/^\/+/, '');
+        if (rel) await openFile(rel);
+        const t = tabs.get(rel);
+        return t?.model ? wrapDoc(rel, t.model) : undefined;
+      },
       getConfiguration: section => {
         let store = {}; try { store = JSON.parse(localStorage[cfgKey(section)] || '{}'); } catch {}
+        const defs = ext.configDefaults || {};
         return {
-          get: (k, def) => (k in store ? store[k] : def),
-          has: k => k in store,
+          get: (k, def) => {
+            const fullKey = section ? `${section}.${k}` : k;
+            if (k in store) return store[k];
+            if (fullKey in defs) return defs[fullKey];
+            return def;
+          },
+          has: k => k in store || (section ? `${section}.${k}` : k) in defs,
+          inspect: k => {
+            const fullKey = section ? `${section}.${k}` : k;
+            return { key: fullKey, defaultValue: defs[fullKey], workspaceValue: store[k] };
+          },
           update: (k, v) => { store[k] = v; try { localStorage[cfgKey(section)] = JSON.stringify(store); } catch {} onDidChangeConfiguration.fire({ affectsConfiguration: s => !section || s.startsWith(section) }); return Promise.resolve(); },
         };
       },
+      onDidOpenTextDocument: (fn, thisArg, ds) => extBus.on('openDoc', ext.dir, p => fn.call(thisArg, wrapDoc(p.rel, p.model)), ds || disposables),
+      onDidCloseTextDocument: (fn, thisArg, ds) => extBus.on('closeDoc', ext.dir, p => fn.call(thisArg, wrapDoc(p.rel, p.model)), ds || disposables),
+      onDidSaveTextDocument: (fn, thisArg, ds) => extBus.on('saveDoc', ext.dir, p => fn.call(thisArg, wrapDoc(p.rel, p.model)), ds || disposables),
+      onDidChangeTextDocument: (fn, thisArg, ds) => extBus.on('changeDoc', ext.dir, p => fn.call(thisArg, {
+        document: wrapDoc(p.rel, p.model),
+        contentChanges: (p.e?.changes || []).map(c => ({ range: fromMRange(c.range), rangeOffset: c.rangeOffset, rangeLength: c.rangeLength, text: c.text })),
+      }), ds || disposables),
       onDidChangeConfiguration: onDidChangeConfiguration.event,
-      onDidChangeTextDocument: onDidChangeTextDocument.event,
+      onDidGrantWorkspaceTrust: noopEv,
+      onDidChangeWorkspaceFolders: (fn, thisArg, ds) => extBus.on('workspaceFolders', ext.dir, p => fn.call(thisArg, p), ds || disposables),
+      createFileSystemWatcher: () => ({ ignoreCreateEvents: false, ignoreChangeEvents: false, ignoreDeleteEvents: false, onDidCreate: noopEv, onDidChange: noopEv, onDidDelete: noopEv, dispose() {} }),
+      findFiles: async () => {
+        const proj = activeProj();
+        if (!proj) return [];
+        const { files } = await vfsAllFiles(proj, { skipHeavy: true, limit: 5000 });
+        return files.map(f => Uri.file('/' + f));
+      },
       applyEdit: async we => {
-        const model = editor?.getModel();
-        if (!model || !we?._edits?.length) return false;
-        editor.executeEdits(ext.dir, we._edits.map(x => ({ range: toMRange(x.r), text: x.t })));
+        if (!we?._edits?.length) return false;
+        const grouped = new Map();
+        for (const x of we._edits) {
+          const p = normUriPath(x.u?.path || x.u || (active ? '/' + active : ''));
+          if (!grouped.has(p)) grouped.set(p, []);
+          grouped.get(p).push({ range: toMRange(x.r), text: x.t });
+        }
+        for (const [p, ops] of grouped) {
+          const model = monaco.editor.getModels().find(m => m.uri.path === p);
+          if (model) {
+            if (editor?.getModel() === model) editor.executeEdits(ext.dir, ops);
+            else model.pushEditOperations([], ops, () => null);
+          }
+        }
         return true;
       },
       fs: {
-        readFile: async u => vfsReadBytes(activeProj(), String(u?.path || '').replace(/^\/+/, '')),
+        readFile: async u => {
+          try { return await vfsReadBytes(activeProj(), normUriPath(u?.path || u).replace(/^\/+/, '')); }
+          catch (e) { throw Object.assign(new Error(e?.message || 'File not found'), { code: 'FileNotFound' }); }
+        },
+        writeFile: async (u, bytes) => {
+          const rel = normUriPath(u?.path || u).replace(/^\/+/, '');
+          await vfsWriteFile(activeProj(), rel, bytes, { force: true });
+          renderTree().catch(() => {});
+        },
+        stat: async u => {
+          const proj = activeProj(), rel = normUriPath(u?.path || u).replace(/^\/+/, '');
+          if (!proj) throw Object.assign(new Error('ENOENT: no workspace'), { code: 'ENOENT' });
+          if (!rel) return { type: 2, ctime: 0, mtime: 0, size: 0 };
+          if (proj.kind !== 'fsa') {
+            const meta = await ensureProjIndex(proj);
+            if (rel in meta) {
+              const b = await vfsReadBytes(proj, rel);
+              return { type: 1, ctime: 0, mtime: 0, size: b.length };
+            }
+            const prefix = rel + '/';
+            const isDir = Object.keys(meta).some(k => k.startsWith(prefix)) || (proj.folders || []).some(f => f === rel || f.startsWith(prefix));
+            if (isDir) return { type: 2, ctime: 0, mtime: 0, size: 0 };
+            throw Object.assign(new Error('ENOENT: ' + rel), { code: 'ENOENT' });
+          }
+          try {
+            const b = await vfsReadBytes(proj, rel);
+            return { type: 1, ctime: Date.now(), mtime: Date.now(), size: b.length };
+          } catch {
+            try { await vfsListDir(proj, rel); return { type: 2, ctime: 0, mtime: 0, size: 0 }; }
+            catch { throw Object.assign(new Error('ENOENT: ' + rel), { code: 'ENOENT' }); }
+          }
+        },
+        readDirectory: async u => {
+          const proj = activeProj(), rel = normUriPath(u?.path || u).replace(/^\/+/, '');
+          if (!proj) return [];
+          try { return (await vfsListDir(proj, rel)).map(it => [it.name, it.dir ? 2 : 1]); }
+          catch { return []; }
+        },
+      },
+    },
+    tasks: {
+      registerTaskProvider(type, provider) {
+        extTaskProviders.push({ type, provider, extDir: ext.dir });
+        const d = new Disposable(() => {
+          const i = extTaskProviders.findIndex(x => x.provider === provider);
+          if (i >= 0) extTaskProviders.splice(i, 1);
+        });
+        disposables.push(d);
+        return d;
+      },
+      async fetchTasks(filter) {
+        const list = [];
+        for (const p of extTaskProviders) {
+          if (filter?.type && p.type !== filter.type) continue;
+          const res = await p.provider.provideTasks?.() || [];
+          list.push(...res);
+        }
+        return list;
+      },
+      async executeTask(task) {
+        if (task?.execution?._cb) {
+          const pty = await task.execution._cb();
+          pty?.onDidWrite?.(s => { if (s && s.trim()) toast(s.trim().slice(0, 140)); });
+          pty?.open?.();
+        }
+        return { terminate() {} };
       },
     },
     languages: {
+      createDiagnosticCollection(name = 'default') {
+        const owner = `ext-diag:${ext.dir}:${name}`;
+        const store = new Map(); // normPath -> { raw, markers }
+        extDiagRegistry.set(owner, store);
+        const sevMap = s => (s === 0 ? monaco.MarkerSeverity.Error : s === 1 ? monaco.MarkerSeverity.Warning : s === 2 ? monaco.MarkerSeverity.Info : monaco.MarkerSeverity.Hint);
+        const applyPath = (targetPath, diags) => {
+          const raw = Array.isArray(diags) ? diags : [];
+          const markers = raw.map(d => ({
+            severity: sevMap(d.severity ?? 1),
+            startLineNumber: (d.range?.start?.line ?? 0) + 1,
+            startColumn: (d.range?.start?.character ?? 0) + 1,
+            endLineNumber: (d.range?.end?.line ?? 0) + 1,
+            endColumn: Math.max((d.range?.start?.character ?? 0) + 2, (d.range?.end?.character ?? 0) + 1),
+            message: String(d.message || ''),
+            source: d.source || ext.displayName,
+            code: typeof d.code === 'object' ? String(d.code.value || '') : (d.code != null ? String(d.code) : undefined),
+          }));
+          if (markers.length) store.set(targetPath, { raw, markers });
+          else store.delete(targetPath);
+          for (const m of monaco.editor.getModels()) {
+            if (m.uri.path === targetPath) monaco.editor.setModelMarkers(m, owner, markers);
+          }
+        };
+        const clearAll = () => {
+          store.clear();
+          for (const m of monaco.editor.getModels()) monaco.editor.setModelMarkers(m, owner, []);
+          refreshProblemsStatus();
+        };
+        const col = {
+          name,
+          set(uriOrPairs, diags) {
+            if (Array.isArray(uriOrPairs)) {
+              for (const [u, d] of uriOrPairs) applyPath(normUriPath(u?.path || u), d);
+            } else if (uriOrPairs) {
+              applyPath(normUriPath(uriOrPairs?.path || uriOrPairs), diags);
+            }
+            refreshProblemsStatus();
+          },
+          delete(u) { applyPath(normUriPath(u?.path || u), []); refreshProblemsStatus(); },
+          clear: clearAll,
+          forEach(cb) { for (const [p, v] of store) cb(Uri.file(p), v.raw, col); },
+          get: u => store.get(normUriPath(u?.path || u))?.raw,
+          has: u => store.has(normUriPath(u?.path || u)),
+          dispose() { clearAll(); extDiagRegistry.delete(owner); },
+        };
+        disposables.push(col);
+        return col;
+      },
+      registerCodeActionsProvider(sel, prov) {
+        const reg = monaco.languages.registerCodeActionProvider;
+        if (typeof reg !== 'function') return new Disposable();
+        const ds = selectorLangs(sel).map(l => reg(l, {
+          async provideCodeActions(model, mRange) {
+            if (!matchSel(sel, model)) return { actions: [], dispose() {} };
+            const rel = [...tabs.entries()].find(([, t]) => t.model === model)?.[0] || model.uri.path.replace(/^\/+/, '');
+            const vsRange = fromMRange(mRange);
+            const diags = [];
+            for (const store of extDiagRegistry.values()) {
+              const rec = store.get(model.uri.path);
+              if (!rec) continue;
+              for (const d of rec.raw) if (d.range && vsRange.intersection(d.range)) diags.push(d);
+            }
+            const res = await prov.provideCodeActions?.(wrapDoc(rel, model), vsRange, { diagnostics: diags }, new CancellationTokenSource().token);
+            const actions = (res || []).map(a => {
+              const ma = { title: a.title, kind: typeof a.kind === 'string' ? a.kind : a.kind?.value || 'quickfix', isPreferred: !!a.isPreferred };
+              if (a.edit?._edits?.length) {
+                ma.edit = { edits: a.edit._edits.map(x => ({ resource: model.uri, versionId: model.getVersionId(), textEdit: { range: toMRange(x.r), text: x.t } })) };
+              } else if (a.command?.command && typeof monaco.editor.registerCommand === 'function') {
+                const cmdId = a.command.command;
+                const d = monaco.editor.registerCommand(cmdId, (_, ...args) => {
+                  for (const rt of extActive.values()) if (rt.commands.has(cmdId)) return rt.commands.get(cmdId)(...(a.command.arguments || args));
+                });
+                disposables.push(d);
+                ma.command = { id: cmdId, title: a.command.title || a.title, arguments: a.command.arguments };
+              }
+              return ma;
+            });
+            return { actions, dispose() {} };
+          },
+        }));
+        ds.forEach(d => disposables.push(d));
+        return Disposable.from(...ds);
+      },
       registerDocumentFormattingEditProvider(sel, prov) {
-        const langs = typeof sel === 'string' ? [sel] : Array.isArray(sel) ? sel.map(s => typeof s === 'string' ? s : s.language).filter(Boolean) : [sel?.language].filter(Boolean);
-        const ds = langs.map(l => monaco.languages.registerDocumentFormattingEditProvider(l, {
+        const ds = selectorLangs(sel).map(l => monaco.languages.registerDocumentFormattingEditProvider(l, {
           async provideDocumentFormattingEdits(model, opts, token) {
+            if (!matchSel(sel, model)) return [];
             const rel = [...tabs.entries()].find(([, t]) => t.model === model)?.[0] || 'untitled';
             const res = await prov.provideDocumentFormattingEdits?.(wrapDoc(rel, model), opts, token);
             return (res || []).map(ed => ({ range: toMRange(ed.range), text: ed.newText }));
@@ -3470,11 +3880,23 @@ function createVscodeApi(ext, disposables, cmdMap) {
         ds.forEach(d => disposables.push(d));
         return Disposable.from(...ds);
       },
+      registerDocumentRangeFormattingEditProvider(sel, prov) {
+        const ds = selectorLangs(sel).map(l => monaco.languages.registerDocumentRangeFormattingEditProvider(l, {
+          async provideDocumentRangeFormattingEdits(model, mRange, opts, token) {
+            if (!matchSel(sel, model)) return [];
+            const rel = [...tabs.entries()].find(([, t]) => t.model === model)?.[0] || 'untitled';
+            const res = await prov.provideDocumentRangeFormattingEdits?.(wrapDoc(rel, model), fromMRange(mRange), opts, token);
+            return (res || []).map(ed => ({ range: toMRange(ed.range), text: ed.newText }));
+          },
+        }));
+        ds.forEach(d => disposables.push(d));
+        return Disposable.from(...ds);
+      },
       registerCompletionItemProvider(sel, prov, ...triggers) {
-        const langs = typeof sel === 'string' ? [sel] : Array.isArray(sel) ? sel.map(s => typeof s === 'string' ? s : s.language).filter(Boolean) : [sel?.language].filter(Boolean);
-        const ds = langs.map(l => monaco.languages.registerCompletionItemProvider(l, {
+        const ds = selectorLangs(sel).map(l => monaco.languages.registerCompletionItemProvider(l, {
           triggerCharacters: triggers,
           async provideCompletionItems(model, position) {
+            if (!matchSel(sel, model)) return { suggestions: [] };
             const rel = [...tabs.entries()].find(([, t]) => t.model === model)?.[0] || 'untitled';
             const res = await prov.provideCompletionItems?.(wrapDoc(rel, model), fromMPos(position), new CancellationTokenSource().token, {});
             const items = Array.isArray(res) ? res : res?.items || [];
@@ -3494,9 +3916,9 @@ function createVscodeApi(ext, disposables, cmdMap) {
         return Disposable.from(...ds);
       },
       registerHoverProvider(sel, prov) {
-        const langs = typeof sel === 'string' ? [sel] : Array.isArray(sel) ? sel.map(s => typeof s === 'string' ? s : s.language).filter(Boolean) : [sel?.language].filter(Boolean);
-        const ds = langs.map(l => monaco.languages.registerHoverProvider(l, {
+        const ds = selectorLangs(sel).map(l => monaco.languages.registerHoverProvider(l, {
           async provideHover(model, position) {
+            if (!matchSel(sel, model)) return null;
             const rel = [...tabs.entries()].find(([, t]) => t.model === model)?.[0] || 'untitled';
             const h = await prov.provideHover?.(wrapDoc(rel, model), fromMPos(position), new CancellationTokenSource().token);
             if (!h) return null;
@@ -3506,7 +3928,6 @@ function createVscodeApi(ext, disposables, cmdMap) {
         ds.forEach(d => disposables.push(d));
         return Disposable.from(...ds);
       },
-      createDiagnosticCollection: () => ({ set() {}, delete() {}, clear() {}, dispose() {} }),
     },
   };
 }
@@ -3640,6 +4061,13 @@ async function unzipVsixToManifest(buf, fallbackMeta = {}) {
     if (ic) iconUrl = bytesToDataUrl(ic, pkg.icon);
   }
   const browserCode = pkg.browser ? readTxt(pkg.browser) : '';
+  const configDefaults = {};
+  const cfgs = Array.isArray(contribs.configuration) ? contribs.configuration : (contribs.configuration ? [contribs.configuration] : []);
+  for (const cfg of cfgs) {
+    for (const [k, v] of Object.entries(cfg?.properties || {})) {
+      if (v && 'default' in v) configDefaults[k] = v.default;
+    }
+  }
   return {
     id: fullId, dir,
     displayName: tr(pkg.displayName || fallbackMeta.displayName || pkg.name || fullId),
@@ -3651,6 +4079,7 @@ async function unzipVsixToManifest(buf, fallbackMeta = {}) {
     iconUrl,
     hasBrowser: !!browserCode,
     browserCode,
+    configDefaults,
     themes, languages, grammars, snippets, commands,
   };
 }
@@ -3669,6 +4098,7 @@ async function activateExtension(ext) {
         await loadScriptOnce(blobUrl);
       }
       const factory = extFactories.get(ext.dir);
+      if (!factory) console.error(`Extension ${ext.id}: factory missing after bundle load (${ext.dir})`);
       if (factory) {
         const vsApi = createVscodeApi(ext, disposables, cmdMap);
         const pathShim = {
@@ -3695,7 +4125,10 @@ async function activateExtension(ext) {
         };
         if (typeof exps.activate === 'function') await exps.activate(ctx);
       }
-    } catch (e) { console.warn(`Extension ${ext.id} web host error:`, e); }
+    } catch (e) {
+      console.error(`Extension ${ext.id} web host error:`, e);
+      toast(`Extension ${ext.displayName || ext.id} error: ${e?.message || e}`, 'error');
+    }
   }
   extActive.set(ext.dir, { ext, disposables, commands: cmdMap, exports: exps });
 }
@@ -3844,6 +4277,11 @@ async function searchMarketplace(q = '') {
   }
 }
 
+function notifyExtOpenDocs(extDir) {
+  for (const [rel, t] of tabs) if (t.model) extBus.fire('openDoc', { rel, model: t.model }, extDir);
+  if (active && tabs.get(active)?.model) extBus.fire('activeEditor', { rel: active, model: tabs.get(active).model }, extDir);
+}
+
 async function installExtFromUI(item, btn) {
   if (btn) { btn.disabled = true; btn.replaceChildren(icon('loading', 'spin'), el('span', '', 'Installing…')); }
   try {
@@ -3855,6 +4293,7 @@ async function installExtFromUI(item, btn) {
     installedExts = await dbAll('extensions');
     const live = installedExts.find(e => e.dir === manifest.dir) || manifest;
     await activateExtension(live);
+    notifyExtOpenDocs(live.dir);
     let msg = `Installed ${live.displayName} v${live.version} in browser IndexedDB.`;
     if (live.themes?.length) {
       applyThemeByKey(`${live.dir}::${live.themes[0].label}`, true);
@@ -3875,7 +4314,7 @@ async function toggleExtFromUI(inst) {
     if (rec) { rec.enabled = next; await dbPut('extensions', rec); }
     installedExts = await dbAll('extensions');
     const live = installedExts.find(e => e.dir === inst.dir);
-    if (next && live) await activateExtension(live);
+    if (next && live) { await activateExtension(live); notifyExtOpenDocs(live.dir); }
     else deactivateExtension(inst.dir);
     renderExtensions();
   } catch (e) { fail(e); }
@@ -3990,6 +4429,8 @@ function startMonaco() {
       padding: { top: 6 }, smoothScrolling: true, cursorSmoothCaretAnimation: 'on', scrollBeyondLastLine: false, renderLineHighlight: 'all',
     });
     editor.onDidChangeCursorPosition(updateStatus);
+    editor.onDidChangeCursorSelection(() => extBus.fire('selection', {}));
+    monaco.editor.onDidChangeMarkers(refreshProblemsStatus);
     $('#loading')?.remove();
     await earlyBoot;
     await loadExtensions(installedExts).catch(e => console.warn('Extensions init:', e));
