@@ -56,7 +56,7 @@ docker compose up -d --build
 - `WEBIDE_PUBLIC_HOSTS`：允许公网访问的域名白名单（逗号分隔，如 `ide.example.com,www.ide.example.com`）。
 - `WEBIDE_TRUST_PROXY`：置于 Caddy/Nginx/Cloudflare 后方时设为 `1`，用于安全解析真实客户端 IP（`X-Real-IP` / `CF-Connecting-IP`）。
 - `WEBIDE_ORIGINS`：允许访问的额外来源列表（逗号分隔）。
-- `WEBIDE_RL_PAGE` / `WEBIDE_RL_SESSION` / `WEBIDE_RL_PROXY` / `WEBIDE_RL_DL` / `WEBIDE_RL_DL_MB`：按单 IP 调节限流阈值。
+- `WEBIDE_RL_PAGE` / `WEBIDE_RL_SESSION` / `WEBIDE_RL_PROXY` / `WEBIDE_RL_DL` / `WEBIDE_RL_DL_MB` / `WEBIDE_ALLOW_BOTS`：按单 IP 调节限流阈值及爬虫放行开关（测试用）。
 - **浏览器端 IndexedDB（`webide-browser-v1`）**：按浏览器 Profile 与 Origin 严格隔离，包含 `projects`（工程元数据与本地 `FileSystemDirectoryHandle`）、`files`（GitHub 克隆及浏览器导入文件内容）、`snapshots`（浏览器侧基线快照）、`extensions`（已下载并解包的 VS Code 插件与主题/语法/片段/Web Bundle）和 `meta`（多工程顺序与活跃状态）。
 - **浏览器端 `localStorage`**：仅保存布局偏好（`webidePrefs`）、当前配色主题键（`webideTheme`）与扩展配置键值。
 
@@ -72,7 +72,7 @@ docker compose up -d --build
 #### 2. 品牌 Logo、极简首页与深空曜黑视觉风格
 - **左上角 Logo 导航**：活动栏顶部内置品牌 Logo 按钮（`#act-home`），任意工作区下点击即可切换回首页，再次点击或点击侧栏图标即可回到工作区。
 - **极简初始页**：首页 `#home` 隐藏左右侧栏，仅保留 **Open. Private. Light.（开放 · 隐私 · 轻量）** Slogan、**打开本地仓库**（`#home-open-local`）、**从 GitHub 打开**（`#home-open-github`）与快捷键指引。
-- **移动端自适应浏览模式（`<= 768px`）**：手机端自动切换为底部导航栏 + 左侧滑出抽屉（资源管理器 / 全文搜索 / Source Control / 快速文件跳转）与单列全屏代码视图（自动隐藏 Minimap、扩展市场与 Agent 面板，点选文件自动收起抽屉），专注于轻量流畅的代码阅读与基础编辑。
+- **移动端自适应浏览模式（`<= 384px`）**：手机端自动切换为底部导航栏 + 左侧滑出抽屉（资源管理器 / 全文搜索 / Source Control / 快速文件跳转）与单列全屏代码视图（自动隐藏 Minimap、扩展市场与 Agent 面板，Markdown 预览自适应全宽切换，点选文件自动收起抽屉），专注于轻量流畅的代码阅读与基础编辑。
 - **统一视觉体系**：深空曜黑（`#060608` / `#0d0d12` / `#111118`）、微网格环境光晕、毛玻璃弹窗与紫蓝青渐变高亮（`#8b5cf6` → `#3b82f6` → `#06b6d4`）。
 
 #### 3. 多工程任务栏与资源休眠机制
@@ -92,7 +92,10 @@ docker compose up -d --build
   - **语言、TextMate 语法与代码片段**：自动注册新语言与括号/注释配置，将 `.tmLanguage.json` 编译为 Monarch Tokenizer，并将 `contributes.snippets` 接入自动补全；
   - **轻量 `vscode` 兼容层**：支持扩展命令注入命令面板（`>`）以及常用格式化、补全、悬停与工作区读取能力。
 
-#### 5. 浏览器侧 Source Control、终端与交互加固
+#### 5. 浏览器侧 Source Control、大纲/诊断、Markdown 预览与交互加固
+- **Problems 诊断、Outline 大纲与跨文件跳转**：底部面板新增 **Problems** 选项卡实时汇总工作区诊断，资源管理器下方新增 **Outline** 折叠大纲快速跳转符号；内置 TypeScript/JS 工作区类型索引、`registerEditorOpener` 跨文件 **Go to Definition** 与 **Prettier** 代码格式化。
+- **Markdown 侧边实时预览**：打开 `.md` 文件时支持通过面包屑栏开关或右键菜单开启右侧实时渲染预览（含双向滚动同步）。
+- **Auto Save 与 Local File History**：支持切换 **Auto Save** 自动保存，以及在浏览器内保存与回溯单文件编辑历史快照并查看 Diff。
 - **浏览器侧 Diff 与本地快照提交**：通过比对当前工作区文件与 IndexedDB `snapshots` 基线自动识别新增/修改/删除文件，点击即可在 Monaco DiffEditor 查看对比，支持暂存、取消暂存、丢弃更改、本地提交记录、从 GitHub 拉取更新，以及点击 **Export ZIP** 纯前端打包导出整个工程。
 - **浏览器内置沙箱终端**：基于 `xterm.js` 提供纯前端命令环境（`help`、`pwd`、`ls`、`cd`、`cat`、`head`、`touch`、`mkdir`、`rm`、`find`、`git status|log`、`ext list`、`clear`），仅操作当前浏览器工作区。
 - **输入法与弹窗交互安全**：全输入框支持 `composing(e)` 防 IME 误触；`quickOpen()` 打开前自动清除触发按钮焦点并延迟关闭执行，避免 `Enter` 关闭弹窗时误二次触发开启按钮。
@@ -118,7 +121,7 @@ docker compose up -d --build
 node test/test.mjs
 ```
 
-自检脚本校验前端内联脚本语法、CSP `blob:` 与禁止 `unsafe-eval` 策略、`/session` 同源校验、`/proxy/*` 输入与域名校验、旧版服务端写/文件/终端接口返回 `404`，以及测试全程服务端 `HOME` 目录下零文件写入。
+自检脚本校验前端内联脚本语法、CSP `blob:` 与禁止 `unsafe-eval` 策略、`/robots.txt` 与爬虫 UA 拦截、Token UA/IP 绑定、公网 `WEBIDE_PUBLIC_HOSTS` 隔离、`429` 单 IP 限流与 `Retry-After`、`/proxy/*` 输入与 SSRF 校验、旧版服务端写/文件/终端接口返回 `404`，以及测试全程服务端 `HOME` 目录下零文件写入。
 
 ---
 
@@ -172,7 +175,7 @@ Built-in zero-password abuse protection:
 - `WEBIDE_PUBLIC_HOSTS`: Comma-separated allowed public domain hostnames (e.g. `ide.example.com`).
 - `WEBIDE_TRUST_PROXY`: Set `1` behind Caddy/Nginx/Cloudflare to trust forwarded client IPs (`X-Real-IP` / `CF-Connecting-IP`).
 - `WEBIDE_ORIGINS`: Comma-separated list of additional allowed CORS origins.
-- `WEBIDE_RL_PAGE` / `WEBIDE_RL_SESSION` / `WEBIDE_RL_PROXY` / `WEBIDE_RL_DL` / `WEBIDE_RL_DL_MB`: Per-IP rate-limit and bandwidth thresholds.
+- `WEBIDE_RL_PAGE` / `WEBIDE_RL_SESSION` / `WEBIDE_RL_PROXY` / `WEBIDE_RL_DL` / `WEBIDE_RL_DL_MB` / `WEBIDE_ALLOW_BOTS`: Per-IP rate-limit/bandwidth thresholds and optional bot bypass flag.
 - **Browser IndexedDB (`webide-browser-v1`)**: Strictly isolated per browser profile and origin across 5 stores: `projects` (project metadata & `FileSystemDirectoryHandle`), `files` (GitHub clones & imported local files), `snapshots` (browser-local baseline snapshots), `extensions` (unpacked VS Code extensions, themes, grammars, snippets, and browser bundles), and `meta` (project taskbar ordering and active selection).
 - **Browser `localStorage`**: Stores layout preferences (`webidePrefs`), active color theme key (`webideTheme`), and extension setting values.
 
@@ -188,7 +191,7 @@ Built-in zero-password abuse protection:
 #### 2. Brand Logo, Minimalist Home & Obsidian Theme
 - **Top-Left Logo Navigation**: Clicking `#act-home` in the Activity Bar switches back to the minimalist Home view from any open workspace.
 - **Focused Entry Screen**: `#home` collapses sidebars and presents the **Open. Private. Light.** slogan, **Open Local Repository** (`#home-open-local`), **Open from GitHub** (`#home-open-github`), and essential shortcuts.
-- **Responsive Mobile Code-Browsing Mode (`<= 768px`)**: On mobile screens, the IDE adapts into a bottom navigation dock with a slide-over drawer (Explorer, Search, Source Control, Quick Open) and a full-width Monaco editor (disabling Minimap and omitting Extensions & Agent panels) optimized for touch browsing.
+- **Responsive Mobile Code-Browsing Mode (`<= 384px`)**: On narrow mobile viewports, the IDE adapts into a bottom navigation dock with a slide-over drawer (Explorer, Search, Source Control, Quick Open) and a full-width Monaco editor (disabling Minimap, omitting Extensions & Agent panels, and switching Markdown preview to full-width overlay) optimized for touch browsing.
 - **Unified Visual Design**: Obsidian dark surfaces (`#060608` / `#0d0d12` / `#111118`), subtle ambient grid glow, frosted-glass dialogs, and purple-blue-cyan gradient highlights shared across the IDE and [site/launch.html](site/launch.html).
 
 #### 3. Multi-Project Taskbar & Resource Hibernation
@@ -208,7 +211,10 @@ Built-in zero-password abuse protection:
   - **Languages, TextMate Grammars & Snippets**: Registers language configs, compiles `.tmLanguage.json` patterns into Monarch tokenizers, and wires `contributes.snippets` to Monaco completions;
   - **Browser `vscode` API Shim**: Exposes lightweight `commands`, `window`, `workspace` (reading from browser VFS), and `languages` APIs and surfaces extension commands in the Command Palette (`>`).
 
-#### 5. Browser-Local Source Control, Sandbox Shell & UX Hardening
+#### 5. Browser-Local Source Control, Outline, Problems, Markdown Preview & Sandbox Shell
+- **Problems Panel, Document Outline & Navigation**: Includes a bottom **Problems** tab listing workspace diagnostics, an expandable **Outline** symbol view under Explorer, TypeScript/JS workspace indexing, cross-file **Go to Definition** (`registerEditorOpener`), and **Prettier** code formatting.
+- **Live Side-by-Side Markdown Preview**: Renders `.md` files in a toggleable live preview pane (`#mdpv`) with synchronized editor scrolling.
+- **Auto Save & Local File History**: Supports toggleable **Auto Save** plus browser-local revision snapshots with one-click diff inspection.
 - **In-Browser Diff & Snapshot History**: Computes added/modified/deleted files against IndexedDB `snapshots`, displays diffs in Monaco DiffEditor, supports staging, unstaging, discarding changes, local commits, pulling GitHub updates, and downloading the workspace directly as a `.zip` archive via **Export ZIP**.
 - **In-Browser Sandbox Terminal**: Powers `xterm.js` with client-side workspace commands (`help`, `pwd`, `ls`, `cd`, `cat`, `head`, `touch`, `mkdir`, `rm`, `find`, `git status|log`, `ext list`, `clear`) without any server shell access.
 - **IME & Modal Reliability**: All inputs use `composing(e)` to prevent CJK IME confirmation misfires, and `quickOpen()` blurs trigger buttons prior to `showModal()` so `Enter` dismissal never re-activates the opener button.
@@ -234,4 +240,4 @@ Built-in zero-password abuse protection:
 node test/test.mjs
 ```
 
-Validates frontend script syntax, `blob:` CSP without `unsafe-eval`, same-origin `/session` enforcement, SSRF and traversal guards on `/proxy/*`, `404` removal of all server-side workspace/shell/extension endpoints, and zero writes inside server `HOME`.
+Validates frontend script syntax, `blob:` CSP without `unsafe-eval`, `/robots.txt` and bot User-Agent blocking, session token IP/UA binding, public `WEBIDE_PUBLIC_HOSTS` allowlisting, `429` per-IP rate limiting with `Retry-After`, SSRF and traversal guards on `/proxy/*`, `404` removal of all server-side workspace/shell/extension endpoints, and zero writes inside server `HOME`.
