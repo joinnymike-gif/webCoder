@@ -47,9 +47,9 @@
 
 #### 1. 全量浏览器本地存储与跨端绝对隔离（零服务端存储）
 - **杜绝跨 Web 端越权读取**：服务端不再维护任何全局 `root`、工作区列表或 `$HOME` 文件浏览接口（已彻底移除 `/root`、`/projects`、`/fs/*`、`/git/*`、`/term/*`、`/agent/*`、`/ext/install` 等服务端状态/磁盘接口）。不同浏览器标签页、无痕窗口或不同 Origin（如 `127.0.0.1` 与 `localhost`）之间完全隔离，无法窥探彼此或宿主机的任何代码目录与已装插件。
-- **双模本地仓库打开**：
-  - 优先调用浏览器原生 **File System Access API**（`window.showDirectoryPicker({ mode: 'readwrite' })`），目录句柄直接保存在浏览器 IndexedDB 中；
-  - 若浏览器不支持或处于受限上下文，自动回退至 `<input type="file" webkitdirectory>` 导入文件至浏览器 IndexedDB，全程不上传任何文件内容到服务器。
+- **双模本地仓库打开（兼容 Safari / Chrome / Edge）**：
+  - 支持 Chromium 原生 **File System Access API**（`window.showDirectoryPicker({ mode: 'readwrite' })`），目录句柄直接保存在浏览器 IndexedDB 中；
+  - 在 Apple Safari 等不支持 `showDirectoryPicker` 的浏览器中，通过兼容优化的 `<input type="file" webkitdirectory>` 或直接从 macOS Finder **拖拽文件夹到首页 / 资源管理器**（`webkitGetAsEntry()`）将本地工程分批导入浏览器 IndexedDB，全程不上传任何文件内容到服务器。
 - **GitHub 仓库纯前端拉取**：通过无状态只读代理 `/proxy/github/meta` 与 `/proxy/github/archive` 拉取公开仓库 `.zip` 压缩流，由前端纯 JS `unzipBytes()`（基于浏览器原生 `DecompressionStream('deflate-raw')`）在内存中解压并直接写入浏览器 IndexedDB（`files` 与 `snapshots`）。
 
 #### 2. 品牌 Logo、极简首页与深空曜黑视觉风格
@@ -145,9 +145,9 @@ Prerequisites: Node.js (with ES Modules and built-in `fetch`) and a modern deskt
 
 #### 1. 100% Browser-Local Storage & Cross-Client Isolation (Zero Server Data)
 - **Zero Cross-Client Leakage**: The server holds no shared `root`, project list, `$HOME` directory browser, host shell, or extension directory (legacy `/root`, `/projects`, `/fs/*`, `/git/*`, `/term/*`, `/agent/*`, and `/ext/install` server-disk endpoints are completely removed). Separate browser tabs, incognito sessions, or origins (`127.0.0.1` vs `localhost`) never see each other's workspaces or extensions.
-- **Dual Local Folder Access**:
-  - Uses the browser's **File System Access API** (`window.showDirectoryPicker({ mode: 'readwrite' })`), storing directory handles directly in IndexedDB;
-  - Automatically falls back to `<input type="file" webkitdirectory>` importing files into browser IndexedDB when FSA is unavailable, never uploading file contents to any server.
+- **Dual Local Folder Access (Safari, Chrome & Edge)**:
+  - Uses the browser's **File System Access API** (`window.showDirectoryPicker({ mode: 'readwrite' })`) where available, storing directory handles directly in IndexedDB;
+  - On Apple Safari and browsers without `showDirectoryPicker`, falls back to a Safari-compatible `<input type="file" webkitdirectory>` flow or direct **Finder folder drag & drop** onto Home / Explorer (`webkitGetAsEntry()`), chunk-importing files into browser IndexedDB without uploading file contents to any server.
 - **Pure-Client GitHub Repository Cloning**: Fetches public repository ZIP archives through stateless `/proxy/github/meta` and `/proxy/github/archive`, unpacks entries in browser memory via `unzipBytes()` (`DecompressionStream('deflate-raw')`), and stores files and initial snapshot baselines strictly in IndexedDB.
 
 #### 2. Brand Logo, Minimalist Home & Obsidian Theme

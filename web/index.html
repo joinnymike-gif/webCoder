@@ -346,6 +346,10 @@
   #toasts { position: fixed; right: 12px; bottom: 64px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
   .toast { display: flex; gap: 8px; align-items: center; max-width: 420px; padding: 10px 12px; background: #111118f2; backdrop-filter: blur(16px); border: 1px solid var(--widget-border); border-radius: 10px; box-shadow: 0 10px 30px #00000080; }
 
+  /* hidden file input offscreen rather than display:none so Apple Safari allows programmatic .click() */
+  #dir-pick { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .drop-folder-hover { outline: 2px dashed var(--accent); outline-offset: -6px; }
+
   @media (max-width: 700px) { #activity, .sash { display: none; } #app { grid-template-columns: 0 0 0 minmax(0, 1fr) 0 0 !important; } #side, #chat { display: none; } }
 </style>
 </head>
@@ -512,7 +516,7 @@
   </footer>
 </div>
 
-<input id="dir-pick" type="file" webkitdirectory multiple hidden>
+<input id="dir-pick" type="file" webkitdirectory directory tabindex="-1" aria-hidden="true">
 <dialog id="qo" class="quick" aria-label="Go to File">
   <div class="qp-in">
     <input id="qoin" spellcheck="false" autocomplete="off" aria-label="Search files by name, or type > for commands">
@@ -578,6 +582,10 @@ const base = p => (p || '').split(/[\\/]/).filter(Boolean).pop() || p || '';
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const icon = (name, cls = '') => el('span', `codicon codicon-${name} ${cls}`);
 const composing = e => e.isComposing || e.keyCode === 229;
+const safeUid = (len = 8) => (typeof crypto?.randomUUID === 'function'
+  ? crypto.randomUUID().replace(/-/g, '')
+  : [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('')
+).slice(0, len);
 function lightDismiss(d, closeFn) {
   let downOnBackdrop = false;
   d.addEventListener('pointerdown', e => { downOnBackdrop = e.target === d; });
@@ -1147,62 +1155,191 @@ async function vfsSearch(proj, query, opts) {
   return { results, truncated };
 }
 
+const SKIP_IMPORT_DIRS = new Set(['node_modules', '.venv', 'venv', '__pycache__', '.next']);
+async function importFileListAsProject(rawFiles, defaultName = 'local-folder') {
+  if (!rawFiles.length) return null;
+  let folderName = defaultName;
+  const parsed = [];
+  for (const item of rawFiles) {
+    const f = item.file || item;
+    const rawRel = String(item.relPath ?? (f.webkitRelativePath || f.name || '')).replace(/\\/g, '/').replace(/^\/+/, '');
+    if (!rawRel) continue;
+    const segs = rawRel.split('/').filter(Boolean);
+    if (!segs.length) continue;
+    let rel;
+    if (item.relPath != null) {
+      rel = segs.join('/');
+    } else if (segs.length > 1) {
+      folderName = segs[0] || defaultName;
+      rel = segs.slice(1).join('/');
+    } else {
+      folderName = 'local-files';
+      rel = segs[0];
+    }
+    const relSegs = rel.split('/');
+    if (!rel || f.size > 15 * 1024 * 1024 || relSegs.some(s => HIDDEN.has(s) || SKIP_IMPORT_DIRS.has(s))) continue;
+    parsed.push({ rel, f });
+  }
+  const id = 'idb:' + folderName + ':' + safeUid(6);
+  const fileMeta = {}, records = [];
+  if (parsed.length > 80) toast(`Importing ${folderName} (${parsed.length} files)…`);
+  for (let i = 0; i < parsed.length; i += 24) {
+    const chunk = parsed.slice(i, i + 24);
+    const results = await Promise.allSettled(chunk.map(x => x.f.arrayBuffer()));
+    for (let j = 0; j < chunk.length; j++) {
+      if (results[j].status !== 'fulfilled') continue; // skip broken macOS symlinks / unreadable files cleanly
+      const u8 = new Uint8Array(results[j].value), etag = bytesEtag(u8), rel = chunk[j].rel;
+      fileMeta[rel] = etag;
+      records.push({ key: fKey(id, rel), projectId: id, path: rel, content: u8, etag, mtime: chunk[j].f.lastModified || Date.now() });
+    }
+  }
+  for (let i = 0; i < records.length; i += 100) {
+    await dbPutMany('files', records.slice(i, i + 100));
+  }
+  const proj = { id, name: folderName, kind: 'idb', folders: [], fileMeta, snapMeta: {}, staged: [], commits: [], createdAt: Date.now() };
+  await dbPut('projects', serializeProjMeta(proj));
+  return proj;
+}
+
 function pickLocalFolderViaInput() {
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
     const inp = $('#dir-pick');
-    inp.value = '';
-    const onDone = async () => {
-      inp.removeEventListener('change', onDone);
-      const list = [...(inp.files || [])].filter(f => {
-        const parts = (f.webkitRelativePath || f.name).split('/').slice(1);
-        return parts.length && f.size <= 10 * 1024 * 1024 && !parts.some(s => HIDDEN.has(s) || s === 'node_modules');
-      });
-      if (!list.length) return resolve(null);
-      const folderName = (list[0].webkitRelativePath || list[0].name).split('/')[0] || 'local-folder';
-      const id = 'idb:' + folderName + ':' + crypto.randomUUID().slice(0, 6);
-      const fileMeta = {}, records = [];
-      for (let i = 0; i < list.length; i += 24) {
-        const chunk = list.slice(i, i + 24);
-        const bufs = await Promise.all(chunk.map(f => f.arrayBuffer()));
-        for (let j = 0; j < chunk.length; j++) {
-          const f = chunk[j], parts = (f.webkitRelativePath || f.name).split('/');
-          const rel = parts.length > 1 ? parts.slice(1).join('/') : f.name;
-          const u8 = new Uint8Array(bufs[j]), etag = bytesEtag(u8);
-          fileMeta[rel] = etag;
-          records.push({ key: fKey(id, rel), projectId: id, path: rel, content: u8, etag, mtime: f.lastModified || Date.now() });
-        }
-      }
-      const proj = { id, name: folderName, kind: 'idb', folders: [], fileMeta, snapMeta: {}, staged: [], commits: [], createdAt: Date.now() };
-      await Promise.all([dbPutMany('files', records), dbPut('projects', serializeProjMeta(proj))]);
-      resolve(proj);
+    let settled = false;
+    const cleanup = () => {
+      inp.onchange = null;
+      inp.oncancel = null;
+      removeEventListener('focus', onWinFocus);
     };
-    inp.addEventListener('change', onDone, { once: true });
+    const finish = (ok, val) => {
+      if (settled) return;
+      settled = true; cleanup();
+      ok ? resolve(val) : reject(val);
+    };
+    const onWinFocus = () => setTimeout(() => {
+      if (!settled && !(inp.files?.length)) finish(true, null);
+    }, 450);
+    inp.onchange = async () => {
+      try {
+        const list = [...(inp.files || [])];
+        if (!list.length) return finish(true, null);
+        finish(true, await importFileListAsProject(list));
+      } catch (err) { finish(false, err); }
+    };
+    inp.oncancel = () => finish(true, null);
+    addEventListener('focus', onWinFocus, { once: true });
+    try { inp.value = ''; } catch {}
     inp.click();
   });
 }
 
-async function pickRoot() {
-  if (typeof window.showDirectoryPicker === 'function') {
-    try {
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-      for (const p of projects.values()) {
-        if (p.kind === 'fsa' && p.handle && (await p.handle.isSameEntry?.(handle))) return p.id;
-      }
-      const id = 'fsa:' + handle.name + ':' + crypto.randomUUID().slice(0, 6);
-      const proj = emptyProj(id, { name: handle.name, kind: 'fsa', handle });
-      projects.set(id, proj);
-      await dbPut('projects', serializeProjMeta(proj));
-      return id;
-    } catch (e) {
-      if (e?.name === 'AbortError') return false;
-      // Fallback for non-FSA contexts / headless automated environments
+async function readDroppedDirEntry(dirEntry, prefix = '') {
+  const reader = dirEntry.createReader();
+  const entries = [];
+  for (;;) {
+    const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+    if (!batch.length) break;
+    entries.push(...batch);
+  }
+  const out = [];
+  for (const en of entries) {
+    if (HIDDEN.has(en.name) || SKIP_IMPORT_DIRS.has(en.name)) continue;
+    const rel = prefix ? prefix + '/' + en.name : en.name;
+    if (en.isDirectory) {
+      out.push(...await readDroppedDirEntry(en, rel));
+    } else if (en.isFile) {
+      const f = await new Promise((res, rej) => en.file(res, rej)).catch(() => null);
+      if (f) out.push({ relPath: rel, file: f });
     }
   }
-  const projRec = await pickLocalFolderViaInput();
-  if (!projRec) return false;
-  const proj = emptyProj(projRec.id, projRec);
-  projects.set(proj.id, proj);
-  return proj.id;
+  return out;
+}
+
+async function openDroppedFolder(e) {
+  const dt = e.dataTransfer;
+  if (!dt?.items?.length || dt.types?.includes(DRAG_PATH) || dt.types?.includes(DRAG_TAB)) return false;
+  const items = [...dt.items].filter(it => it.kind === 'file');
+  if (!items.length) return false;
+  e.preventDefault();
+  const prev = root;
+  // Prefer persistent FileSystemDirectoryHandle in Chromium if supported
+  if (typeof items[0].getAsFileSystemHandle === 'function') {
+    try {
+      const handle = await items[0].getAsFileSystemHandle();
+      if (handle?.kind === 'directory') {
+        for (const p of projects.values()) {
+          if (p.kind === 'fsa' && p.handle && (await p.handle.isSameEntry?.(handle))) {
+            return switchProject(p.id);
+          }
+        }
+        const id = 'fsa:' + handle.name + ':' + safeUid(6);
+        const proj = emptyProj(id, { name: handle.name, kind: 'fsa', handle });
+        projects.set(id, proj);
+        await dbPut('projects', serializeProjMeta(proj));
+        if (prev) hibernateCurrent(prev);
+        root = id;
+        await restoreProject(root);
+        return true;
+      }
+    } catch {}
+  }
+  // Universal Safari / Firefox / Chrome fallback via webkitGetAsEntry
+  const entry = items[0].webkitGetAsEntry?.();
+  if (entry?.isDirectory) {
+    const collected = await readDroppedDirEntry(entry);
+    const rec = await importFileListAsProject(collected, entry.name);
+    if (rec) {
+      const proj = emptyProj(rec.id, rec);
+      projects.set(proj.id, proj);
+      if (prev) hibernateCurrent(prev);
+      root = proj.id;
+      await restoreProject(root);
+      return true;
+    }
+  }
+  return false;
+}
+
+for (const zone of [$('#home'), $('#empty'), $('#view-explorer')]) {
+  if (!zone) continue;
+  zone.addEventListener('dragover', e => {
+    if (e.dataTransfer?.types?.includes('Files') && !e.dataTransfer.types.includes(DRAG_PATH) && !e.dataTransfer.types.includes(DRAG_TAB)) {
+      e.preventDefault(); zone.classList.add('drop-folder-hover');
+    }
+  });
+  zone.addEventListener('dragleave', e => { if (!zone.contains(e.relatedTarget)) zone.classList.remove('drop-folder-hover'); });
+  zone.addEventListener('drop', e => { zone.classList.remove('drop-folder-hover'); openDroppedFolder(e).catch(fail); });
+}
+
+function pickRoot() {
+  if (typeof window.showDirectoryPicker === 'function') {
+    return (async () => {
+      try {
+        const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        for (const p of projects.values()) {
+          if (p.kind === 'fsa' && p.handle && (await p.handle.isSameEntry?.(handle))) return p.id;
+        }
+        const id = 'fsa:' + handle.name + ':' + safeUid(6);
+        const proj = emptyProj(id, { name: handle.name, kind: 'fsa', handle });
+        projects.set(id, proj);
+        await dbPut('projects', serializeProjMeta(proj));
+        return id;
+      } catch (e) {
+        if (e?.name === 'AbortError') return false;
+        const projRec = await pickLocalFolderViaInput();
+        if (!projRec) return false;
+        const proj = emptyProj(projRec.id, projRec);
+        projects.set(proj.id, proj);
+        return proj.id;
+      }
+    })();
+  }
+  // Synchronous call path so Apple Safari preserves transient user activation on inp.click()
+  return pickLocalFolderViaInput().then(projRec => {
+    if (!projRec) return false;
+    const proj = emptyProj(projRec.id, projRec);
+    projects.set(proj.id, proj);
+    return proj.id;
+  });
 }
 
 // ---------- workspace + multi-project taskbar & resource hibernation ----------
@@ -2907,7 +3044,7 @@ async function gitCommit() {
       await dbDel('snapshots', fKey(proj.id, rel));
     }
   }
-  const hash = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+  const hash = safeUid(12);
   proj.staged = [];
   proj.commits = [{ hash, shortHash: hash.slice(0, 7), subject: message, author: 'Browser-Local', date: new Date().toLocaleString() }, ...(proj.commits || [])].slice(0, 50);
   await dbPut('projects', serializeProjMeta(proj));
@@ -2950,7 +3087,7 @@ async function cloneGithubIntoBrowser(slug, branch = '') {
       return !!rel && !rel.split('/').some(s => HIDDEN.has(s));
     },
   });
-  const id = 'gh:' + slug + ':' + crypto.randomUUID().slice(0, 6);
+  const id = 'gh:' + slug + ':' + safeUid(6);
   const repoName = slug.split('/').pop();
   const fileRecs = [], snapRecs = [], fileMeta = {}, snapMeta = {}, now = Date.now();
   for (const [rawPath, bytes] of zipEntries) {
