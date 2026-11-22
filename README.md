@@ -55,6 +55,7 @@
 #### 2. 品牌 Logo、极简首页与深空曜黑视觉风格
 - **左上角 Logo 导航**：活动栏顶部内置品牌 Logo 按钮（`#act-home`），任意工作区下点击即可切换回首页，再次点击或点击侧栏图标即可回到工作区。
 - **极简初始页**：首页 `#home` 隐藏左右侧栏，仅保留 **Open. Private. Light.（开放 · 隐私 · 轻量）** Slogan、**打开本地仓库**（`#home-open-local`）、**从 GitHub 打开**（`#home-open-github`）与快捷键指引。
+- **移动端自适应浏览模式（`<= 768px`）**：手机端自动切换为底部导航栏 + 左侧滑出抽屉（资源管理器 / 全文搜索 / Source Control / 快速文件跳转）与单列全屏代码视图（自动隐藏 Minimap、扩展市场与 Agent 面板，点选文件自动收起抽屉），专注于轻量流畅的代码阅读与基础编辑。
 - **统一视觉体系**：深空曜黑（`#060608` / `#0d0d12` / `#111118`）、微网格环境光晕、毛玻璃弹窗与紫蓝青渐变高亮（`#8b5cf6` → `#3b82f6` → `#06b6d4`）。
 
 #### 3. 多工程任务栏与资源休眠机制
@@ -153,6 +154,7 @@ Prerequisites: Node.js (with ES Modules and built-in `fetch`) and a modern deskt
 #### 2. Brand Logo, Minimalist Home & Obsidian Theme
 - **Top-Left Logo Navigation**: Clicking `#act-home` in the Activity Bar switches back to the minimalist Home view from any open workspace.
 - **Focused Entry Screen**: `#home` collapses sidebars and presents the **Open. Private. Light.** slogan, **Open Local Repository** (`#home-open-local`), **Open from GitHub** (`#home-open-github`), and essential shortcuts.
+- **Responsive Mobile Code-Browsing Mode (`<= 768px`)**: On mobile screens, the IDE adapts into a bottom navigation dock with a slide-over drawer (Explorer, Search, Source Control, Quick Open) and a full-width Monaco editor (disabling Minimap and omitting Extensions & Agent panels) optimized for touch browsing.
 - **Unified Visual Design**: Obsidian dark surfaces (`#060608` / `#0d0d12` / `#111118`), subtle ambient grid glow, frosted-glass dialogs, and purple-blue-cyan gradient highlights shared across the IDE and [site/launch.html](site/launch.html).
 
 #### 3. Multi-Project Taskbar & Resource Hibernation

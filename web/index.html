@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>WebIDE</title>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -19,7 +19,7 @@
   }
   * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #ffffff24 transparent; }
   [hidden] { display: none !important; }
-  html, body { height: 100%; margin: 0; overflow: hidden; background: var(--bg); color: var(--fg); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  html, body { height: 100%; height: 100dvh; margin: 0; overflow: hidden; background: var(--bg); color: var(--fg); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
   button, input, select, textarea { font: inherit; color: inherit; }
   button { cursor: pointer; }
   :focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
@@ -349,8 +349,69 @@
   /* hidden file input offscreen rather than display:none so Apple Safari allows programmatic .click() */
   #dir-pick { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
   .drop-folder-hover { outline: 2px dashed var(--accent); outline-offset: -6px; }
+  .mob-only { display: none; }
+  .mob-empty-acts { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  #mob-backdrop { display: none; }
 
-  @media (max-width: 700px) { #activity, .sash { display: none; } #app { grid-template-columns: 0 0 0 minmax(0, 1fr) 0 0 !important; } #side, #chat { display: none; } }
+  @media (max-width: 768px) {
+    .mob-only { display: inline-flex; }
+    .act.mob-only { display: grid; }
+    .mob-empty-acts.mob-only { display: flex; }
+
+    /* Mobile code-browsing IDE layout: omit Extensions & Agent chat, bottom dock + slide-over drawer */
+    #act-ext, #view-ext, #act-chat, #chat, #sash-chat, .sash, #status { display: none !important; }
+    #app { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) auto calc(50px + env(safe-area-inset-bottom, 0px)) !important; }
+    #main { grid-area: 1 / 1; }
+    #ws-bar { grid-area: 2 / 1; height: 38px; padding: 0 8px; }
+    #activity { grid-area: 3 / 1; width: 100%; height: calc(50px + env(safe-area-inset-bottom, 0px)); padding: 0 6px env(safe-area-inset-bottom, 0px); flex-direction: row; justify-content: space-around; align-items: center; border-right: 0; border-top: 1px solid var(--border); z-index: 40; }
+    #act-home { width: 52px; height: 48px; border-bottom: 0; }
+    .act { flex: 1; max-width: 72px; width: auto; height: 48px; }
+    .act .codicon[class*='codicon-'] { font-size: 21px; }
+    .act .act-badge { right: 12px; bottom: 8px; }
+    .act.on::before, #act-home.on::before { left: 16px; right: 16px; top: 0; bottom: auto; width: auto; height: 2px; }
+
+    #mob-backdrop { display: block; position: fixed; inset: 0 0 calc(50px + env(safe-area-inset-bottom, 0px)) 0; z-index: 34; background: #00000080; backdrop-filter: blur(2px); }
+    #side { position: fixed; left: 0; top: 0; bottom: calc(50px + env(safe-area-inset-bottom, 0px)); width: min(86vw, 320px); z-index: 35; box-shadow: 12px 0 40px #000000b8; }
+
+    /* Touch-friendly sizing & iOS anti-zoom input font-size */
+    .ptitle { height: 42px; padding: 0 10px 0 14px; font-size: 12px; }
+    .ptitle .ibtn, #tabs .tab .x { width: 30px; height: 30px; }
+    .section { height: 32px; font-size: 11.5px; }
+    .section .actions, .git-sec .actions, .git-row .actions { opacity: 1; display: flex; }
+    .row { height: 36px; font-size: 13.5px; }
+    .ibtn { width: 28px; height: 28px; }
+    .sr-input input { height: 34px; font-size: 16px; }
+    .tgl { width: 28px; height: 28px; }
+    .git-box textarea { font-size: 16px; }
+    .quick input, #gitdlg input { height: 38px; font-size: 16px; }
+    dialog.quick { margin: 4vh auto 0; width: calc(100vw - 16px); max-height: 82dvh; }
+    .qi { height: 36px; font-size: 13.5px; }
+    .qp-foot { display: none; }
+
+    /* Editor header, tabs & diff bar */
+    #tabs { height: 40px; }
+    .tab { padding: 0 6px 0 12px; font-size: 13px; }
+    .tab .x { visibility: visible; }
+    #crumbs { height: 24px; padding: 0 10px; font-size: 11.5px; overflow-x: auto; scrollbar-width: none; }
+    #diff .dbar { height: 40px; padding: 0 8px; gap: 6px; }
+    #diff .dh { display: none; }
+
+    /* Mobile project taskbar & Home / Empty screens */
+    .ws-task { height: 28px; max-width: 150px; padding: 0 4px 0 8px; }
+    .ws-task .ws-sleep { display: none; }
+    .ws-task .ws-x { width: 20px; height: 20px; }
+    .ws-add { height: 28px; padding: 0 8px; }
+    #home { padding: 24px 16px; }
+    .home-in { gap: 22px; }
+    .home-hero h1 { font-size: clamp(28px, 8.5vw, 38px); }
+    .home-slogan { font-size: 12px; letter-spacing: .16em; }
+    .home-actions { flex-direction: column; align-items: center; }
+    .home-btn { width: 100%; max-width: 280px; height: 46px; }
+    .home-keys, #empty .wm dl { display: none; }
+    #empty .wm .logo[class*='codicon-'] { font-size: 84px; }
+    #toasts { left: 10px; right: 10px; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+    .toast { max-width: none; width: 100%; }
+  }
 </style>
 </head>
 <body>
@@ -364,10 +425,12 @@
     <button class="act" id="act-files" title="Explorer"><span class="codicon codicon-files"></span></button>
     <button class="act" id="act-search" title="Search"><span class="codicon codicon-search"></span></button>
     <button class="act" id="act-git" title="Source Control (Git / GitHub)"><span class="codicon codicon-source-control"></span><span class="act-badge" id="git-badge" hidden></span></button>
+    <button class="act mob-only" id="act-quick" title="Quick Open File"><span class="codicon codicon-go-to-file"></span></button>
     <button class="act" id="act-ext" title="Extensions (VS Code Marketplace)"><span class="codicon codicon-extensions"></span></button>
     <button class="act" id="act-chat" title="Chat"><span class="codicon codicon-comment-discussion"></span></button>
   </nav>
 
+  <div id="mob-backdrop" hidden></div>
   <aside id="side">
    <div id="view-explorer" class="view">
     <div class="ptitle"><span>Explorer</span><span class="sp"></span><button class="ibtn" id="open-folder" title="Open Folder…"><span class="codicon codicon-folder-opened"></span></button></div>
@@ -452,7 +515,7 @@
     <div id="crumbs"></div>
     <div id="edwrap">
       <div id="ed"></div>
-      <div id="empty"><div class="wm"><span class="codicon codicon-code logo"></span><dl id="keys"></dl></div></div>
+      <div id="empty"><div class="wm"><span class="codicon codicon-code logo"></span><dl id="keys"></dl><div class="mob-empty-acts mob-only"><button class="btn" id="empty-browse">浏览文件目录</button><button class="btn sec" id="empty-quick">快速查找文件</button></div></div></div>
       <div id="home" hidden>
         <div class="home-in">
           <header class="home-hero">
@@ -634,42 +697,82 @@ function toast(text, kind = 'info') {
 const fail = e => { toast(e?.message || String(e), 'error'); };
 
 // ---------- layout ----------
+const isMobileUI = () => window.matchMedia('(max-width: 768px)').matches;
 const prefs = { sideW: 260, chatW: 340, side: true, chat: false, view: 'explorer', wrap: false, termH: 260 };
 try { Object.assign(prefs, JSON.parse(localStorage.webidePrefs || '{}')); } catch { /* storage unavailable */ }
 // prefs = what the user chose (saved). shown = what fits in this window right now (never saved),
 // so a narrow window can fold a panel without the user's choice being lost.
 const shown = { ...prefs };
-let lastOpened = 'side', homeOn = false, root = null, editor = null;
+let lastOpened = 'side', homeOn = false, root = null, editor = null, mobDrawer = false, lastMob = isMobileUI();
 const projects = new Map(); // projRoot -> hibernated/active project state
 function layout() {
+  const mob = isMobileUI();
   Object.assign(shown, prefs);
-  const avail = innerWidth - 48, ed = () => avail - (shown.side ? shown.sideW : 0) - (shown.chat ? shown.chatW : 0);
-  const other = lastOpened === 'side' ? 'chat' : 'side';
-  if (ed() < 360 && shown.side && shown.chat) shown[other] = false; // both don't fit: keep the one opened last
-  if (ed() < 360 && shown.chat) shown.chatW = Math.max(260, avail - 360 - (shown.side ? shown.sideW : 0));
-  if (ed() < 360 && shown.side) shown.sideW = Math.max(170, avail - 360 - (shown.chat ? shown.chatW : 0));
-  const sideOn = !homeOn && shown.side, chatOn = !homeOn && shown.chat;
+  const activeView = (mob && prefs.view === 'ext') ? 'explorer' : prefs.view;
   const barOn = projects.size > 0 && !(homeOn && !root);
-  const stHidden = homeOn && !root;
-  $('#app').style.gridTemplateColumns = `48px ${sideOn ? shown.sideW : 0}px 0 minmax(0, 1fr) 0 ${chatOn ? shown.chatW : 0}px`;
-  $('#app').style.gridTemplateRows = `minmax(0, 1fr) ${barOn ? '34px' : '0px'} ${stHidden ? '0px' : '22px'}`;
-  $('#side').hidden = $('#sash-side').hidden = !sideOn;
-  $('#chat').hidden = $('#sash-chat').hidden = !chatOn;
-  $('#ws-bar').hidden = !barOn;
-  $('#status').hidden = stHidden;
-  $('#view-explorer').hidden = prefs.view !== 'explorer';
-  $('#view-search').hidden = prefs.view !== 'search';
-  $('#view-git').hidden = prefs.view !== 'git';
-  $('#view-ext').hidden = prefs.view !== 'ext';
-  $('#act-files').classList.toggle('on', sideOn && prefs.view === 'explorer');
-  $('#act-search').classList.toggle('on', sideOn && prefs.view === 'search');
-  $('#act-git').classList.toggle('on', sideOn && prefs.view === 'git');
-  $('#act-ext').classList.toggle('on', sideOn && prefs.view === 'ext');
-  $('#act-chat').classList.toggle('on', chatOn);
-  $('#panel').style.height = Math.max(100, Math.min(prefs.termH, innerHeight - 22 - 35 - 120)) + 'px'; // the editor keeps ~120px
+  if (mob) {
+    shown.side = mobDrawer;
+    shown.chat = false;
+    const sideOn = !homeOn && mobDrawer;
+    $('#app').style.gridTemplateColumns = 'minmax(0, 1fr)';
+    $('#app').style.gridTemplateRows = `minmax(0, 1fr) ${barOn ? '38px' : '0px'} calc(50px + env(safe-area-inset-bottom, 0px))`;
+    $('#side').hidden = !sideOn;
+    $('#sash-side').hidden = $('#sash-chat').hidden = $('#chat').hidden = $('#status').hidden = true;
+    $('#mob-backdrop').hidden = !sideOn;
+    $('#ws-bar').hidden = !barOn;
+    $('#view-explorer').hidden = activeView !== 'explorer';
+    $('#view-search').hidden = activeView !== 'search';
+    $('#view-git').hidden = activeView !== 'git';
+    $('#view-ext').hidden = true;
+    $('#act-files').classList.toggle('on', sideOn && activeView === 'explorer');
+    $('#act-search').classList.toggle('on', sideOn && activeView === 'search');
+    $('#act-git').classList.toggle('on', sideOn && activeView === 'git');
+    $('#act-ext').classList.remove('on');
+    $('#act-chat').classList.remove('on');
+    const maxMobPanel = Math.max(100, Math.floor((innerHeight - 96) * 0.45));
+    $('#panel').style.height = Math.max(100, Math.min(prefs.termH, maxMobPanel)) + 'px';
+  } else {
+    const avail = innerWidth - 48, ed = () => avail - (shown.side ? shown.sideW : 0) - (shown.chat ? shown.chatW : 0);
+    const other = lastOpened === 'side' ? 'chat' : 'side';
+    if (ed() < 360 && shown.side && shown.chat) shown[other] = false; // both don't fit: keep the one opened last
+    if (ed() < 360 && shown.chat) shown.chatW = Math.max(260, avail - 360 - (shown.side ? shown.sideW : 0));
+    if (ed() < 360 && shown.side) shown.sideW = Math.max(170, avail - 360 - (shown.chat ? shown.chatW : 0));
+    const sideOn = !homeOn && shown.side, chatOn = !homeOn && shown.chat;
+    const stHidden = homeOn && !root;
+    $('#app').style.gridTemplateColumns = `48px ${sideOn ? shown.sideW : 0}px 0 minmax(0, 1fr) 0 ${chatOn ? shown.chatW : 0}px`;
+    $('#app').style.gridTemplateRows = `minmax(0, 1fr) ${barOn ? '34px' : '0px'} ${stHidden ? '0px' : '22px'}`;
+    $('#side').hidden = $('#sash-side').hidden = !sideOn;
+    $('#chat').hidden = $('#sash-chat').hidden = !chatOn;
+    $('#mob-backdrop').hidden = true;
+    $('#ws-bar').hidden = !barOn;
+    $('#status').hidden = stHidden;
+    $('#view-explorer').hidden = activeView !== 'explorer';
+    $('#view-search').hidden = activeView !== 'search';
+    $('#view-git').hidden = activeView !== 'git';
+    $('#view-ext').hidden = activeView !== 'ext';
+    $('#act-files').classList.toggle('on', sideOn && activeView === 'explorer');
+    $('#act-search').classList.toggle('on', sideOn && activeView === 'search');
+    $('#act-git').classList.toggle('on', sideOn && activeView === 'git');
+    $('#act-ext').classList.toggle('on', sideOn && activeView === 'ext');
+    $('#act-chat').classList.toggle('on', chatOn);
+    $('#panel').style.height = Math.max(100, Math.min(prefs.termH, innerHeight - 22 - 35 - 120)) + 'px'; // the editor keeps ~120px
+  }
+  if (editor && lastMob !== mob) {
+    lastMob = mob;
+    editor.updateOptions({
+      minimap: { enabled: !mob },
+      glyphMargin: !mob,
+      lineNumbersMinChars: mob ? 3 : 5,
+      fontSize: mob ? 12.5 : 13,
+    });
+  }
   try { localStorage.webidePrefs = JSON.stringify(prefs); } catch { /* storage unavailable */ }
 }
 function toggle(key) {
+  if (isMobileUI()) {
+    if (key === 'chat') return;
+    if (key === 'side') { mobDrawer = !mobDrawer; layout(); return; }
+  }
   prefs[key] = !shown[key];
   if (prefs[key]) lastOpened = key;
   layout();
@@ -696,8 +799,10 @@ sash('#sash-chat', 'chatW', -1, 260, 800);
 addEventListener('resize', layout);
 // Side bar views (Explorer / Search). As in VS Code, clicking the icon of the view already showing hides the side bar.
 function showView(v) {
+  if (isMobileUI() && v === 'ext') v = 'explorer';
   if (homeOn) showHome(false);
   prefs.view = v;
+  if (isMobileUI()) { mobDrawer = true; layout(); return; }
   if (!shown.side) toggle('side'); else layout();
 }
 const activityClick = v => () => {
@@ -706,16 +811,21 @@ const activityClick = v => () => {
 };
 function showHome(on) {
   homeOn = !!on;
+  if (homeOn && isMobileUI()) mobDrawer = false;
   $('#home').hidden = !homeOn;
   $('#act-home').classList.toggle('on', homeOn);
   renderProjectBar();
 }
+$('#mob-backdrop').onclick = () => { if (mobDrawer) { mobDrawer = false; layout(); } };
 $('#act-home').onclick = () => showHome(root ? !homeOn : true);
 $('#home-open-local').onclick = () => openFolder().catch(fail);
 $('#home-open-github').onclick = () => openGitDialog('clone');
 $('#act-files').onclick = activityClick('explorer');
 $('#act-search').onclick = () => (!homeOn && shown.side && prefs.view === 'search' ? toggle('side') : openSearch());
 $('#act-git').onclick = () => (!homeOn && shown.side && prefs.view === 'git' ? toggle('side') : openGitView());
+$('#act-quick').onclick = () => quickOpen('');
+$('#empty-browse').onclick = () => showView('explorer');
+$('#empty-quick').onclick = () => quickOpen('');
 $('#act-ext').onclick = () => (!homeOn && shown.side && prefs.view === 'ext' ? toggle('side') : openExtView());
 $('#act-chat').onclick = () => (homeOn ? (showHome(false), !prefs.chat && toggle('chat')) : toggle('chat'));
 $('#st-agent').onclick = () => toggle('chat');
@@ -1580,6 +1690,7 @@ async function restoreProject(projRoot) {
   $('#ws-head').title = `${snap.name} (Browser-Local)`;
   document.title = root ? `${snap.name} — WebIDE` : 'WebIDE';
   sr.last = null; $('#sr-res').replaceChildren(); $('#sr-msg').textContent = '';
+  if (isMobileUI()) { mobDrawer = !snap.tabs.length; if (mobDrawer) prefs.view = 'explorer'; }
   showHome(false);
   renderProjectBar();
   persistProjectOrder().catch(() => {});
@@ -1762,6 +1873,7 @@ async function openFile(rel, { preview = false } = {}) {
     }
   } else if (!preview) tabs.get(rel).preview = false; // opened "for real": pin it
   recent.splice(0, recent.length, rel, ...recent.filter(r => r !== rel).slice(0, 19));
+  if (isMobileUI() && mobDrawer) { mobDrawer = false; layout(); }
   await activate(rel);
   replaced?.dispose(); // after the editor switched away from it
 }
@@ -1790,7 +1902,7 @@ async function activate(rel, { noReveal = false } = {}) {
   $('#empty').hidden = !!t;
   $('#tabs').hidden = $('#crumbs').hidden = !tabs.size;
   renderTabs(); renderCrumbs(); updateStatus();
-  if (t) { if (!noReveal) reveal(active); editor?.focus(); }
+  if (t) { if (!noReveal) reveal(active); if (!isMobileUI()) editor?.focus(); }
   if (typeof extBus !== 'undefined') extBus.fire('activeEditor', { rel: active, model: t?.model || null });
 }
 // Returns false if the user cancelled. force = drop without asking (only where the content is already safe).
@@ -2637,7 +2749,7 @@ const COMMANDS = () => [
   { label: 'View: Close Editor', key: K.close, run: () => active && closeTab(active) },
   { label: 'View: Close All Editors', run: () => closeMany([...tabs.keys()]) },
   { label: 'View: Toggle Primary Side Bar Visibility', key: K.side, run: () => toggle('side') },
-  { label: 'View: Toggle Chat', run: () => toggle('chat') },
+  ...(isMobileUI() ? [] : [{ label: 'View: Toggle Chat', run: () => toggle('chat') }]),
   { label: 'File: Reveal Active File in Explorer View', run: () => { showView('explorer'); return reveal(active); } },
   { label: 'Explorer: Refresh', run: renderTree },
   { label: 'Explorer: Collapse Folders', run: () => { expanded.clear(); return renderTree(); } },
@@ -2646,9 +2758,11 @@ const COMMANDS = () => [
   { label: 'Search: Find in Files', key: K.find, run: () => openSearch() },
   { label: 'View: Show Explorer', key: K.explorer, run: () => showView('explorer') },
   { label: 'View: Show Source Control', key: K.git, run: openGitView },
-  { label: 'View: Show Extensions', key: K.ext, run: openExtView },
-  { label: 'Preferences: Color Theme', run: () => quickOpen('', 'theme') },
-  ...getExtCommands(),
+  ...(isMobileUI() ? [] : [
+    { label: 'View: Show Extensions', key: K.ext, run: openExtView },
+    { label: 'Preferences: Color Theme', run: () => quickOpen('', 'theme') },
+    ...getExtCommands(),
+  ]),
   { label: 'Git: Clone from GitHub…', run: () => openGitDialog('clone') },
   { label: 'Git: Connect GitHub Remote…', run: () => openGitDialog('remote') },
   { label: 'Git: Checkout / Create Branch…', run: gitBranchPicker },
@@ -2953,6 +3067,7 @@ function renderGit() {
 }
 async function openGitDiff(rel, staged) {
   showHome(false);
+  if (isMobileUI() && mobDrawer) { mobDrawer = false; layout(); }
   const proj = activeProj();
   if (!proj) return;
   const snap = await dbGet('snapshots', fKey(proj.id, rel));
@@ -2974,7 +3089,7 @@ async function openGitDiff(rel, staged) {
   bar.append(icon('git-compare'), el('span', 'dt', `${rel} (Browser Snapshot ↔ Working Tree)`), el('span', 'sp'), openBtn, stageBtn, x);
   const host = el('div', 'dhost');
   box.append(bar, host); $('#edwrap').append(box);
-  const de = monaco.editor.createDiffEditor(host, { automaticLayout: true, readOnly: true, originalEditable: false, fontFamily: editor.getRawOptions().fontFamily, fontSize: editor.getRawOptions().fontSize, wordWrap: prefs.wrap ? 'on' : 'off' });
+  const de = monaco.editor.createDiffEditor(host, { automaticLayout: true, readOnly: true, originalEditable: false, renderSideBySide: !isMobileUI(), fontFamily: editor.getRawOptions().fontFamily, fontSize: editor.getRawOptions().fontSize, wordWrap: prefs.wrap ? 'on' : 'off' });
   de.setModel({ original: orig, modified: mod });
   diff = { kind: 'git', rel, staged, de, orig, mod, box };
 }
@@ -4518,6 +4633,7 @@ $('#extdlg').addEventListener('cancel', e => { e.preventDefault(); closeExtDialo
 lightDismiss($('#extdlg'), closeExtDialog);
 
 function openExtView() {
+  if (isMobileUI()) return;
   showView('ext');
   dbAll('extensions').then(list => { installedExts = list; renderExtensions(); }).catch(() => {});
   if (!marketLoaded) searchMarketplace($('#ext-q').value.trim());
@@ -4539,14 +4655,15 @@ $('#ext-themes').onclick = () => quickOpen('', 'theme');
 const earlyBoot = (async () => {
   ensureToken();
   try {
+    const mob = isMobileUI();
     const [savedProjs, orderMeta, activeMeta, exts] = await Promise.all([
       dbAll('projects').catch(() => []),
       dbGet('meta', 'projects').catch(() => null),
       dbGet('meta', 'activeProject').catch(() => null),
-      dbAll('extensions').catch(() => []),
+      mob ? Promise.resolve([]) : dbAll('extensions').catch(() => []),
     ]);
     installedExts = exts || [];
-    renderExtensions();
+    if (!mob) renderExtensions();
     await loadRoot([savedProjs, orderMeta, activeMeta]);
   } catch (e) { fail(e); }
 })();
@@ -4561,8 +4678,11 @@ function startMonaco() {
       'editorLineNumber.foreground': '#525266', 'editorLineNumber.activeForeground': '#e2e8f0', 'editor.lineHighlightBackground': '#ffffff05', 'editor.lineHighlightBorder': '#ffffff0a', 'editor.selectionBackground': '#6366f138',
     } });
     blankModel = monaco.editor.createModel('', 'plaintext');
+    const mob = isMobileUI();
+    lastMob = mob;
     editor = monaco.editor.create($('#ed'), {
-      model: blankModel, readOnly: true, theme: 'dark-modern', wordWrap: prefs.wrap ? 'on' : 'off', automaticLayout: true, fontFamily: 'ui-monospace, "SF Mono", Menlo, "Cascadia Mono", Consolas, monospace', fontSize: 13,
+      model: blankModel, readOnly: true, theme: 'dark-modern', wordWrap: prefs.wrap ? 'on' : 'off', automaticLayout: true, fontFamily: 'ui-monospace, "SF Mono", Menlo, "Cascadia Mono", Consolas, monospace', fontSize: mob ? 12.5 : 13,
+      minimap: { enabled: !mob }, glyphMargin: !mob, lineNumbersMinChars: mob ? 3 : 5,
       padding: { top: 6 }, smoothScrolling: true, cursorSmoothCaretAnimation: 'on', scrollBeyondLastLine: false, renderLineHighlight: 'all',
     });
     editor.onDidChangeCursorPosition(updateStatus);
@@ -4570,7 +4690,7 @@ function startMonaco() {
     monaco.editor.onDidChangeMarkers(refreshProblemsStatus);
     $('#loading')?.remove();
     await earlyBoot;
-    await loadExtensions(installedExts).catch(e => console.warn('Extensions init:', e));
+    if (!isMobileUI()) await loadExtensions(installedExts).catch(e => console.warn('Extensions init:', e));
     if (active && tabs.has(active)) await activate(active, { noReveal: true });
   }, err => { $('#loading').textContent = 'Could not load the editor (Monaco from cdnjs): ' + err.message; });
 }
