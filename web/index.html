@@ -401,10 +401,9 @@
    </div>
    <div id="view-git" class="view" hidden>
     <div class="ptitle"><span>Source Control</span><span class="sp"></span>
-      <button class="ibtn" id="git-clone-btn" title="Clone from GitHub…"><span class="codicon codicon-repo-clone"></span></button>
-      <button class="ibtn" id="git-pull-btn" title="Pull"><span class="codicon codicon-repo-pull"></span></button>
-      <button class="ibtn" id="git-push-btn" title="Push"><span class="codicon codicon-repo-push"></span></button>
-      <button class="ibtn" id="git-fetch-btn" title="Fetch"><span class="codicon codicon-sync"></span></button>
+      <button class="ibtn" id="git-clone-btn" title="Clone from GitHub (Browser IndexedDB)…"><span class="codicon codicon-repo-clone"></span></button>
+      <button class="ibtn" id="git-pull-btn" title="Pull Updates from GitHub"><span class="codicon codicon-repo-pull"></span></button>
+      <button class="ibtn" id="git-export-btn" title="Export Workspace as ZIP"><span class="codicon codicon-desktop-download"></span></button>
       <button class="ibtn" id="git-refresh-btn" title="Refresh"><span class="codicon codicon-refresh"></span></button>
     </div>
     <div id="git-empty" class="welcome" hidden>
@@ -417,8 +416,8 @@
       <div class="git-box">
         <textarea id="git-msg" rows="2" placeholder="Commit message (⌘Enter to commit)"></textarea>
         <div class="git-btns">
-          <button class="btn" id="git-commit">Commit</button>
-          <button class="btn sec" id="git-commit-push" title="Commit staged changes (or all) and Push to GitHub">Commit &amp; Push</button>
+          <button class="btn" id="git-commit">Commit (Local)</button>
+          <button class="btn sec" id="git-commit-export" title="Commit locally and download workspace ZIP">Export ZIP</button>
         </div>
       </div>
       <div id="git-list" class="git-list"></div>
@@ -496,32 +495,21 @@
   </footer>
 
   <footer id="status">
-    <span class="si remote" title="Everything runs on this machine"><span class="codicon codicon-remote"></span>Local</span>
-    <button class="si" id="st-root" title="Open Folder…"></button>
-    <button class="si" id="st-git" title="Checkout / Create Branch…" hidden></button>
-    <button class="si" id="st-sync" title="Sync (Pull / Push)" hidden></button>
+    <span class="si remote" title="All workspaces, files & extensions live only in your browser"><span class="codicon codicon-shield"></span>Browser-Local</span>
+    <button class="si" id="st-root" title="Open Local Folder…"></button>
+    <button class="si" id="st-git" title="Checkout Branch…" hidden></button>
+    <button class="si" id="st-sync" title="Export / Sync" hidden></button>
     <span class="sp"></span>
     <button class="si" id="st-pos" title="Go to Line" hidden></button>
     <button class="si" id="st-indent" title="Select Indentation" hidden></button>
     <span class="si" id="st-enc" title="File encoding" hidden></span>
     <button class="si" id="st-eol" title="Select End of Line Sequence" hidden></button>
     <span class="si" id="st-lang" hidden></span>
-    <button class="si" id="st-agent" title="Toggle Chat"></button>
+    <button class="si" id="st-agent" title="Browser Privacy Status"></button>
   </footer>
 </div>
 
-<dialog id="qp" class="quick" aria-label="Open Folder">
-  <div class="qp-in">
-    <div class="qp-title"><span class="codicon codicon-folder-opened"></span><span>Open Folder</span><span class="sp"></span><button class="ibtn" id="qp-up" title="Parent Folder"><span class="codicon codicon-arrow-up"></span></button></div>
-    <input id="qpin" spellcheck="false" autocomplete="off" aria-label="Folder path">
-    <div id="qpmsg" class="qp-msg" hidden></div>
-    <div id="qplist" class="qlist" role="listbox"></div>
-    <div class="qp-foot">
-      <span class="keys"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>Enter</kbd> go into</span><span><kbd class="mod"></kbd> <kbd>Enter</kbd> open this folder</span></span>
-      <span class="sp"></span><button class="btn sec" id="qp-cancel">Cancel</button><button class="btn" id="qp-ok">Open</button>
-    </div>
-  </div>
-</dialog>
+<input id="dir-pick" type="file" webkitdirectory multiple hidden>
 <dialog id="qo" class="quick" aria-label="Go to File">
   <div class="qp-in">
     <input id="qoin" spellcheck="false" autocomplete="off" aria-label="Search files by name, or type > for commands">
@@ -539,8 +527,8 @@
     <label><span id="gd-url-lbl">Repository (owner/repo, HTTPS, or git@github.com:...)</span>
       <input id="gd-url" placeholder="e.g. owner/repo or https://github.com/owner/repo.git" spellcheck="false" autocomplete="off" required>
     </label>
-    <label id="gd-dir-wrap"><span>Clone into parent folder (under your home folder)</span>
-      <input id="gd-dir" spellcheck="false" autocomplete="off">
+    <label id="gd-dir-wrap"><span>Branch (optional — saved locally in browser IndexedDB)</span>
+      <input id="gd-dir" placeholder="e.g. main (leave blank for default HEAD)" spellcheck="false" autocomplete="off">
     </label>
     <div id="gd-err" class="qp-msg err" hidden></div>
     <div class="gd-foot"><button type="button" class="btn sec" id="gd-cancel">Cancel</button><button type="submit" class="btn" id="gd-ok">Clone</button></div>
@@ -638,7 +626,7 @@ function toast(text, kind = 'info') {
 const fail = e => { toast(e?.message || String(e), 'error'); };
 
 // ---------- layout ----------
-const prefs = { sideW: 260, chatW: 380, side: true, chat: true, view: 'explorer', wrap: false, termH: 260 };
+const prefs = { sideW: 260, chatW: 340, side: true, chat: false, view: 'explorer', wrap: false, termH: 260 };
 try { Object.assign(prefs, JSON.parse(localStorage.webidePrefs || '{}')); } catch { /* storage unavailable */ }
 // prefs = what the user chose (saved). shown = what fits in this window right now (never saved),
 // so a narrow window can fold a panel without the user's choice being lost.
@@ -731,115 +719,467 @@ $('#home-keys').append(...[['打开本地仓库', K.open], ['快速打开文件'
 }));
 $$('kbd.mod').forEach(k => k.textContent = MOD);
 
-// ---------- folder picker (VS Code style quick input) ----------
-const qp = { dir: '', sep: '/', parent: null, dirs: [], items: [], active: 0, filter: '', err: '', seq: 0, done: null, busy: Promise.resolve() };
-async function qpBrowse(p) {
-  const d = await getJSON('/fs/browse?path=' + enc(p));
-  Object.assign(qp, { dir: d.path, sep: d.sep || '/', parent: d.parent, dirs: d.dirs, err: '' });
-}
-async function pickRoot() {
-  if ($('#qp').open) return false; // already showing
-  if (qp.done) qpClose(false);      // stale state from a picker that closed without telling us
-  try { await qpBrowse(root || ''); } catch (e) { fail(e); return false; }
-  const inp = $('#qpin');
-  inp.value = qp.dir + qp.sep;
-  qpRender('');
-  $('#qp').showModal();
-  inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length);
-  return new Promise(ok => { qp.done = ok; });
-}
-function qpClose(result) {
-  const done = qp.done; qp.done = null;
-  if ($('#qp').open) $('#qp').close();
-  done?.(result);
-}
-function qpRender(f = qp.filter) {
-  qp.filter = f;
-  const fl = f.toLowerCase();
-  qp.items = (qp.parent && !f ? [{ name: '..', path: qp.parent, up: true }] : []).concat(qp.dirs.filter(d => d.name.toLowerCase().includes(fl)));
-  qp.active = 0;
-  $('#qplist').replaceChildren(...qp.items.map((it, k) => {
-    const row = el('div', 'qi'); row.setAttribute('role', 'option');
-    const name = el('span');
-    const j = fl && !it.up ? it.name.toLowerCase().indexOf(fl) : -1;
-    if (j >= 0) name.append(it.name.slice(0, j), el('mark', '', it.name.slice(j, j + f.length)), it.name.slice(j + f.length));
-    else name.textContent = it.name;
-    row.append(icon(it.up ? 'arrow-up' : 'folder'), name);
-    if (it.up) row.append(el('span', 'qd', 'parent folder'));
-    row.onclick = () => qpEnter(it);
-    row.onmousemove = () => { if (qp.active !== k) qpSetActive(k); };
-    return row;
-  }));
-  qpSetActive(0);
-  const msg = qp.err || (qp.items.length ? '' : f ? 'No matching folders' : 'This folder has no subfolders');
-  $('#qpmsg').textContent = msg; $('#qpmsg').hidden = !msg; $('#qpmsg').classList.toggle('err', !!qp.err);
-  $('#qp-up').disabled = !qp.parent;
-}
-function qpSetActive(k) {
-  qp.active = k;
-  $$('#qplist .qi').forEach((r, i) => r.classList.toggle('on', i === k));
-  $$('#qplist .qi')[k]?.scrollIntoView({ block: 'nearest' });
-}
-async function qpInput() {
-  const v = $('#qpin').value, i = Math.max(v.lastIndexOf('/'), v.lastIndexOf('\\'));
-  let dir = i < 0 ? '' : (v.slice(0, i) || qp.sep), f = v.slice(i + 1);
-  if (/^[a-zA-Z]:$/.test(dir)) dir += '\\';
-  if (dir && dir !== qp.dir) {
-    const n = ++qp.seq;
-    try { await qpBrowse(dir); }
-    catch (e) {
-      if (n !== qp.seq) return;
-      if (e.status === 403 && v && !v.endsWith('/') && !v.endsWith('\\')) {
-        try { await qpBrowse(v); if (n === qp.seq) return qpRender(''); } catch { /* fall through to error */ }
-        if (n !== qp.seq) return;
+// ---------- browser-local IndexedDB + ZIP + Virtual File System (zero server storage) ----------
+const IDB_NAME = 'webide-browser-v1', IDB_VER = 1;
+let dbPromise = null;
+function openDB() {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((res, rej) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VER);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('files')) {
+        const s = db.createObjectStore('files', { keyPath: 'key' });
+        s.createIndex('byProj', 'projectId');
       }
-      Object.assign(qp, { dir, parent: null, dirs: [], err: e.status === 403 ? 'Only folders inside your home folder can be opened.' : 'Folder not found.' });
-    }
-    if (n !== qp.seq) return;
-  }
-  qpRender(f);
+      if (!db.objectStoreNames.contains('snapshots')) {
+        const s = db.createObjectStore('snapshots', { keyPath: 'key' });
+        s.createIndex('byProj', 'projectId');
+      }
+      if (!db.objectStoreNames.contains('extensions')) db.createObjectStore('extensions', { keyPath: 'dir' });
+      if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
+    };
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error || new Error('IndexedDB unavailable'));
+  });
+  return dbPromise;
 }
-const qpSync = () => (qp.busy = qpInput());
-function qpEnter(it) {
-  const inp = $('#qpin');
-  inp.value = it.path.endsWith(qp.sep) ? it.path : it.path + qp.sep;
-  inp.focus();
-  qpSync();
-}
-async function qpAccept() {
-  await qp.busy;
-  if (qp.err) return;
-  const exact = qp.dirs.find(d => d.name === qp.filter);
-  try {
-    const d = await (await postJSON('/root', { path: exact ? exact.path : qp.dir, projects: [...projects.keys()] })).json();
-    qpClose(d.root);
-  } catch (e) { qp.err = e.message; qpRender(); }
-}
-$('#qpin').oninput = qpSync;
-$('#qpin').onkeydown = e => {
-  if (composing(e)) return;
-  const n = qp.items.length;
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (n) qpSetActive((qp.active + (e.key === 'ArrowDown' ? 1 : -1) + n) % n); }
-  else if (e.key === 'Enter') { e.preventDefault(); if (e.metaKey || e.ctrlKey || !n) qpAccept(); else qpEnter(qp.items[qp.active]); }
-  else if (e.key === 'Tab' && n) { e.preventDefault(); qpEnter(qp.items[qp.active]); }
+const idbTx = async (store, mode, fn) => {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, mode), st = tx.objectStore(store);
+    let out;
+    try { out = fn(st); } catch (e) { rej(e); return; }
+    tx.oncomplete = () => res(out && 'result' in out ? out.result : out);
+    tx.onerror = () => rej(tx.error || new Error('IndexedDB error'));
+  });
 };
-$('#qp-ok').onclick = qpAccept;
-$('#qp-cancel').onclick = () => qpClose(false);
-$('#qp-up').onclick = () => { if (qp.parent) qpEnter({ path: qp.parent }); };
-// Esc: handle 'cancel' ourselves. Some Chromium builds close the dialog on Esc without ever firing 'close',
-// which used to leave the picker "busy" so every Open Folder entry point silently did nothing.
-$('#qp').addEventListener('cancel', e => { e.preventDefault(); qpClose(false); });
-$('#qp').addEventListener('close', () => qpClose(false));
-lightDismiss($('#qp'), () => qpClose(false));
+const dbGet = (store, key) => idbTx(store, 'readonly', st => st.get(key));
+const dbPut = (store, val) => idbTx(store, 'readwrite', st => st.put(val));
+const dbDel = (store, key) => idbTx(store, 'readwrite', st => st.delete(key));
+const dbAll = store => idbTx(store, 'readonly', st => st.getAll());
+const dbByProj = (store, projId) => idbTx(store, 'readonly', st => st.index('byProj').getAll(projId));
+const dbPutMany = (store, items) => idbTx(store, 'readwrite', st => { for (const x of items) st.put(x); });
+const dbDelByProj = (store, projId) => idbTx(store, 'readwrite', st => {
+  const req = st.index('byProj').openCursor(projId);
+  req.onsuccess = () => { const c = req.result; if (c) { c.delete(); c.continue(); } };
+});
+
+// Pure-JS browser ZIP reader (store + DEFLATE via DecompressionStream)
+async function inflateRawBytes(bytes) {
+  if (typeof DecompressionStream !== 'function') throw new Error('Browser DecompressionStream("deflate-raw") is required.');
+  const ds = new DecompressionStream('deflate-raw');
+  const w = ds.writable.getWriter();
+  w.write(bytes); w.close();
+  const ab = await new Response(ds.readable).arrayBuffer();
+  return new Uint8Array(ab);
+}
+async function unzipBytes(buf, { maxBytes = 150 * 1024 * 1024, maxFiles = 10000 } = {}) {
+  const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  let eocd = -1;
+  for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65558); i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('Invalid ZIP / VSIX archive');
+  const entries = dv.getUint16(eocd + 10, true);
+  const cdSize = dv.getUint32(eocd + 12, true), cdOff = dv.getUint32(eocd + 16, true);
+  if (entries > maxFiles || cdOff + cdSize > u8.length) throw new Error('Invalid or oversized archive directory');
+  const dec = new TextDecoder('utf-8', { fatal: false });
+  const files = new Map();
+  let off = cdOff, total = 0;
+  for (let i = 0; i < entries; i++) {
+    if (off + 46 > u8.length || dv.getUint32(off, true) !== 0x02014b50) break;
+    const method = dv.getUint16(off + 10, true);
+    const compSize = dv.getUint32(off + 20, true);
+    const uncompSize = dv.getUint32(off + 24, true);
+    const nameLen = dv.getUint16(off + 28, true), extLen = dv.getUint16(off + 30, true), cmtLen = dv.getUint16(off + 32, true);
+    const localOff = dv.getUint32(off + 42, true);
+    const name = dec.decode(u8.subarray(off + 46, off + 46 + nameLen)).replace(/\\/g, '/');
+    off += 46 + nameLen + extLen + cmtLen;
+    if (!name || name.endsWith('/') || name.startsWith('/') || name.split('/').some(s => s === '..')) continue;
+    total += uncompSize;
+    if (total > maxBytes) throw new Error('Extracted archive exceeds size limit');
+    if (localOff + 30 > u8.length || dv.getUint32(localOff, true) !== 0x04034b50) continue;
+    const lNameLen = dv.getUint16(localOff + 26, true), lExtLen = dv.getUint16(localOff + 28, true);
+    const dataStart = localOff + 30 + lNameLen + lExtLen;
+    if (dataStart + compSize > u8.length) throw new Error('Truncated ZIP entry: ' + name);
+    const slice = u8.subarray(dataStart, dataStart + compSize);
+    if (method === 0) files.set(name, new Uint8Array(slice));
+    else if (method === 8) files.set(name, await inflateRawBytes(slice));
+  }
+  return files;
+}
+
+const CRC_TBL = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(u8) {
+  let c = 0xffffffff;
+  for (let i = 0; i < u8.length; i++) c = CRC_TBL[(c ^ u8[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+function buildZipBlob(entries) {
+  const encUtf8 = new TextEncoder(), locals = [], centrals = [];
+  let offset = 0;
+  for (const [nameRaw, rawBytes] of entries) {
+    const name = encUtf8.encode(nameRaw), data = rawBytes instanceof Uint8Array ? rawBytes : encUtf8.encode(String(rawBytes));
+    const sum = crc32(data);
+    const lh = new Uint8Array(30 + name.length), lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(14, sum, true);
+    lv.setUint32(18, data.length, true); lv.setUint32(22, data.length, true); lv.setUint16(26, name.length, true);
+    lh.set(name, 30);
+    locals.push(lh, data);
+
+    const ch = new Uint8Array(46 + name.length), cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
+    cv.setUint32(16, sum, true); cv.setUint32(20, data.length, true); cv.setUint32(24, data.length, true);
+    cv.setUint16(28, name.length, true); cv.setUint32(42, offset, true);
+    ch.set(name, 46);
+    centrals.push(ch);
+    offset += lh.length + data.length;
+  }
+  const cdSize = centrals.reduce((a, b) => a + b.length, 0);
+  const eocd = new Uint8Array(22), ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, centrals.length, true); ev.setUint16(10, centrals.length, true);
+  ev.setUint32(12, cdSize, true); ev.setUint32(16, offset, true);
+  return new Blob([...locals, ...centrals, eocd], { type: 'application/zip' });
+}
+
+const fKey = (projId, rel) => `${projId}\0${rel}`;
+const textEnc = new TextEncoder(), textDec = new TextDecoder('utf-8', { ignoreBOM: true });
+function bytesEtag(u8) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < u8.length; i++) { h ^= u8[i]; h = Math.imul(h, 16777619) >>> 0; }
+  return `${u8.length.toString(36)}-${h.toString(36)}`;
+}
+function decodeTextBytes(u8, rel = '') {
+  if (u8.length > 5 * 1024 * 1024) throw Object.assign(new Error(`${base(rel)} is larger than 5 MB and can't be opened.`), { status: 413 });
+  const n = Math.min(8192, u8.length);
+  for (let i = 0; i < n; i++) if (u8[i] === 0) throw Object.assign(new Error(`${base(rel)} is a binary file and can't be opened in the text editor.`), { status: 415 });
+  return { text: textDec.decode(u8), etag: bytesEtag(u8), bytes: u8 };
+}
+async function ensureFsaPerm(handle, write = false) {
+  if (!handle?.queryPermission) return true;
+  const opts = { mode: write ? 'readwrite' : 'read' };
+  if ((await handle.queryPermission(opts)) === 'granted') return true;
+  if ((await handle.requestPermission(opts)) === 'granted') return true;
+  throw new Error('Browser folder permission was declined. Re-open the folder or grant access when prompted.');
+}
+async function fsaResolveParent(rootHandle, rel, createDirs = false) {
+  const parts = rel.split('/').filter(Boolean);
+  const name = parts.pop();
+  let cur = rootHandle;
+  for (const seg of parts) cur = await cur.getDirectoryHandle(seg, { create: createDirs });
+  return { parent: cur, name };
+}
+async function ensureProjCache(proj) {
+  if (!proj || proj.kind === 'fsa') return null;
+  if (!proj._fileMap) {
+    const list = await dbByProj('files', proj.id);
+    proj._fileMap = new Map(list.map(r => [r.path, r]));
+  }
+  return proj._fileMap;
+}
+async function vfsListDir(proj, dirRel = '') {
+  if (!proj) return [];
+  const items = [];
+  if (proj.kind === 'fsa') {
+    await ensureFsaPerm(proj.handle, false);
+    let dh = proj.handle;
+    for (const seg of dirRel.split('/').filter(Boolean)) dh = await dh.getDirectoryHandle(seg);
+    for await (const [name, h] of dh.entries()) {
+      if (!HIDDEN.has(name)) items.push({ name, dir: h.kind === 'directory' });
+    }
+  } else {
+    const map = await ensureProjCache(proj);
+    const prefix = dirRel ? dirRel + '/' : '';
+    const seen = new Map();
+    for (const rel of map.keys()) {
+      if (!rel.startsWith(prefix)) continue;
+      const rest = rel.slice(prefix.length);
+      if (!rest) continue;
+      const slash = rest.indexOf('/'), name = slash < 0 ? rest : rest.slice(0, slash);
+      if (HIDDEN.has(name)) continue;
+      seen.set(name, seen.get(name) || slash >= 0);
+    }
+    for (const f of proj.folders || []) {
+      if (!f.startsWith(prefix)) continue;
+      const rest = f.slice(prefix.length);
+      if (!rest) continue;
+      const slash = rest.indexOf('/'), name = slash < 0 ? rest : rest.slice(0, slash);
+      if (!HIDDEN.has(name) && !seen.has(name)) seen.set(name, true);
+    }
+    for (const [name, dir] of seen) items.push({ name, dir });
+  }
+  return items.sort((a, b) => (a.dir !== b.dir ? (a.dir ? -1 : 1) : a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })));
+}
+async function vfsReadBytes(proj, rel) {
+  if (!proj) throw new Error('No open project');
+  if (proj.kind === 'fsa') {
+    await ensureFsaPerm(proj.handle, false);
+    const { parent, name } = await fsaResolveParent(proj.handle, rel, false);
+    const fh = await parent.getFileHandle(name);
+    const f = await fh.getFile();
+    return new Uint8Array(await f.arrayBuffer());
+  }
+  const map = await ensureProjCache(proj);
+  const rec = map.get(rel);
+  if (!rec) throw Object.assign(new Error(`File not found: ${rel}`), { status: 404 });
+  return rec.content instanceof Uint8Array ? rec.content : textEnc.encode(String(rec.content || ''));
+}
+async function vfsReadFile(proj, rel) {
+  return decodeTextBytes(await vfsReadBytes(proj, rel), rel);
+}
+async function vfsWriteFile(proj, rel, textOrBytes, { create = false, expectedEtag = null, force = false } = {}) {
+  const bytes = textOrBytes instanceof Uint8Array ? textOrBytes : textEnc.encode(String(textOrBytes ?? ''));
+  const nextEtag = bytesEtag(bytes);
+  if (proj.kind === 'fsa') {
+    await ensureFsaPerm(proj.handle, true);
+    const { parent, name } = await fsaResolveParent(proj.handle, rel, !create);
+    let existing = null;
+    try { existing = await parent.getFileHandle(name); } catch {}
+    if (create && existing) throw Object.assign(new Error(`"${name}" already exists`), { status: 409 });
+    if (!force && expectedEtag && existing) {
+      const curEtag = bytesEtag(new Uint8Array(await (await existing.getFile()).arrayBuffer()));
+      if (curEtag !== expectedEtag) throw Object.assign(new Error('File modified outside editor'), { status: 412 });
+    }
+    const fh = await parent.getFileHandle(name, { create: true });
+    const w = await fh.createWritable();
+    await w.write(bytes); await w.close();
+    return nextEtag;
+  }
+  const map = await ensureProjCache(proj);
+  const existing = map.get(rel);
+  if (create && existing) throw Object.assign(new Error(`"${base(rel)}" already exists`), { status: 409 });
+  if (!force && expectedEtag && existing) {
+    const curBytes = existing.content instanceof Uint8Array ? existing.content : textEnc.encode(String(existing.content || ''));
+    if (bytesEtag(curBytes) !== expectedEtag) throw Object.assign(new Error('File modified outside editor'), { status: 412 });
+  }
+  const rec = { key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: bytes, mtime: Date.now() };
+  map.set(rel, rec);
+  await dbPut('files', rec);
+  return nextEtag;
+}
+async function vfsMkdir(proj, rel) {
+  if (proj.kind === 'fsa') {
+    await ensureFsaPerm(proj.handle, true);
+    const { parent, name } = await fsaResolveParent(proj.handle, rel, true);
+    let exists = false;
+    try { await parent.getDirectoryHandle(name); exists = true; } catch {}
+    if (exists) throw Object.assign(new Error(`"${name}" already exists`), { status: 409 });
+    await parent.getDirectoryHandle(name, { create: true });
+    return;
+  }
+  const map = await ensureProjCache(proj);
+  const folders = new Set(proj.folders || []);
+  if (folders.has(rel) || [...map.keys()].some(k => k === rel || k.startsWith(rel + '/'))) {
+    throw Object.assign(new Error(`"${base(rel)}" already exists`), { status: 409 });
+  }
+  folders.add(rel);
+  proj.folders = [...folders];
+  await dbPut('projects', serializeProjMeta(proj));
+}
+async function vfsCopyFsaDir(srcDh, dstDh) {
+  for await (const [name, h] of srcDh.entries()) {
+    if (h.kind === 'directory') {
+      const sub = await dstDh.getDirectoryHandle(name, { create: true });
+      await vfsCopyFsaDir(h, sub);
+    } else {
+      const f = await h.getFile(), nh = await dstDh.getFileHandle(name, { create: true });
+      const w = await nh.createWritable();
+      await w.write(await f.arrayBuffer()); await w.close();
+    }
+  }
+}
+async function vfsRename(proj, from, to) {
+  if (to === from || to.startsWith(from + '/')) throw Object.assign(new Error('Cannot move a folder inside itself'), { status: 400 });
+  if (proj.kind === 'fsa') {
+    await ensureFsaPerm(proj.handle, true);
+    const src = await fsaResolveParent(proj.handle, from, false);
+    const dst = await fsaResolveParent(proj.handle, to, true);
+    let collision = false;
+    try { await dst.parent.getFileHandle(dst.name); collision = true; } catch {}
+    try { await dst.parent.getDirectoryHandle(dst.name); collision = true; } catch {}
+    if (collision) throw Object.assign(new Error('Target already exists'), { status: 409 });
+    let isDir = false;
+    try {
+      const dh = await src.parent.getDirectoryHandle(src.name); isDir = true;
+      const newDh = await dst.parent.getDirectoryHandle(dst.name, { create: true });
+      await vfsCopyFsaDir(dh, newDh);
+    } catch (e) { if (isDir) throw e; }
+    if (!isDir) {
+      const fh = await src.parent.getFileHandle(src.name), f = await fh.getFile();
+      const nfh = await dst.parent.getFileHandle(dst.name, { create: true }), w = await nfh.createWritable();
+      await w.write(await f.arrayBuffer()); await w.close();
+    }
+    await src.parent.removeEntry(src.name, { recursive: true });
+    return;
+  }
+  const map = await ensureProjCache(proj);
+  const hasCollision = map.has(to) || [...map.keys()].some(k => k.startsWith(to + '/')) || (proj.folders || []).includes(to);
+  if (hasCollision) throw Object.assign(new Error('Target already exists'), { status: 409 });
+  const toMove = [...map.entries()].filter(([k]) => k === from || k.startsWith(from + '/'));
+  for (const [k, rec] of toMove) {
+    const nk = k === from ? to : to + k.slice(from.length);
+    await dbDel('files', rec.key);
+    map.delete(k);
+    const nr = { key: fKey(proj.id, nk), projectId: proj.id, path: nk, content: rec.content, mtime: Date.now() };
+    map.set(nk, nr);
+    await dbPut('files', nr);
+  }
+  proj.folders = (proj.folders || []).map(f => (f === from ? to : f.startsWith(from + '/') ? to + f.slice(from.length) : f));
+  await dbPut('projects', serializeProjMeta(proj));
+}
+async function vfsDelete(proj, rel) {
+  if (proj.kind === 'fsa') {
+    await ensureFsaPerm(proj.handle, true);
+    const { parent, name } = await fsaResolveParent(proj.handle, rel, false);
+    await parent.removeEntry(name, { recursive: true });
+    return;
+  }
+  const map = await ensureProjCache(proj);
+  for (const [k, rec] of [...map.entries()]) {
+    if (k === rel || k.startsWith(rel + '/')) { map.delete(k); await dbDel('files', rec.key); }
+  }
+  proj.folders = (proj.folders || []).filter(f => f !== rel && !f.startsWith(rel + '/'));
+  await dbPut('projects', serializeProjMeta(proj));
+}
+async function vfsAllFiles(proj, { skipHeavy = true, limit = 20000 } = {}) {
+  const files = [];
+  let truncated = false;
+  if (!proj) return { files, truncated };
+  if (proj.kind === 'fsa') {
+    await ensureFsaPerm(proj.handle, false);
+    const walk = async (dh, prefix) => {
+      for await (const [name, h] of dh.entries()) {
+        if (files.length >= limit) { truncated = true; return; }
+        if (HIDDEN.has(name) || (skipHeavy && name === 'node_modules')) continue;
+        const rel = prefix ? prefix + '/' + name : name;
+        if (h.kind === 'directory') await walk(h, rel);
+        else files.push(rel);
+      }
+    };
+    await walk(proj.handle, '');
+  } else {
+    const map = await ensureProjCache(proj);
+    for (const rel of map.keys()) {
+      if (skipHeavy && rel.split('/').some(s => s === 'node_modules' || HIDDEN.has(s))) continue;
+      files.push(rel);
+      if (files.length >= limit) { truncated = true; break; }
+    }
+  }
+  files.sort();
+  return { files, truncated };
+}
+async function vfsSearch(proj, query, opts) {
+  const escRx = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let pat = opts.regex ? query : escRx(query);
+  if (opts.word) pat = `\\b(?:${pat})\\b`;
+  const rx = new RegExp(pat, opts.case ? 'g' : 'gi');
+  const { files } = await vfsAllFiles(proj, { skipHeavy: true, limit: 20000 });
+  const results = [];
+  let totalMatches = 0, truncated = false;
+  for (let i = 0; i < files.length && totalMatches < 2000; i++) {
+    if (i > 0 && i % 30 === 0) await new Promise(r => setTimeout(r, 0));
+    let text;
+    try { ({ text } = await vfsReadFile(proj, files[i])); } catch { continue; }
+    const matches = [], lines = text.split(/\r?\n/);
+    for (let ln = 0; ln < lines.length && totalMatches < 2000; ln++) {
+      const line = lines[ln];
+      rx.lastIndex = 0;
+      let m;
+      while ((m = rx.exec(line)) && totalMatches < 2000) {
+        if (m[0].length === 0) { rx.lastIndex++; continue; }
+        const off = Math.max(0, m.index - 40);
+        matches.push({ line: ln + 1, col: m.index + 1, len: m[0].length, off, text: line.slice(off, off + 240) });
+        totalMatches++;
+      }
+    }
+    if (matches.length) results.push({ file: files[i], matches });
+  }
+  if (totalMatches >= 2000) truncated = true;
+  return { results, truncated };
+}
+
+function pickLocalFolderViaInput() {
+  return new Promise(resolve => {
+    const inp = $('#dir-pick');
+    inp.value = '';
+    const onDone = async () => {
+      inp.removeEventListener('change', onDone);
+      const list = [...(inp.files || [])];
+      if (!list.length) return resolve(null);
+      const folderName = (list[0].webkitRelativePath || list[0].name).split('/')[0] || 'local-folder';
+      const id = 'idb:' + folderName + ':' + crypto.randomUUID().slice(0, 6);
+      const proj = { id, name: folderName, kind: 'idb', folders: [], staged: [], commits: [], createdAt: Date.now() };
+      const records = [];
+      for (const f of list) {
+        const parts = (f.webkitRelativePath || f.name).split('/');
+        const rel = parts.length > 1 ? parts.slice(1).join('/') : f.name;
+        if (!rel || rel.split('/').some(s => HIDDEN.has(s))) continue;
+        records.push({ key: fKey(id, rel), projectId: id, path: rel, content: new Uint8Array(await f.arrayBuffer()), mtime: f.lastModified || Date.now() });
+      }
+      await dbPutMany('files', records);
+      await dbPut('projects', serializeProjMeta(proj));
+      resolve(proj);
+    };
+    inp.addEventListener('change', onDone, { once: true });
+    inp.click();
+  });
+}
+
+async function pickRoot() {
+  if (typeof window.showDirectoryPicker === 'function') {
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      for (const p of projects.values()) {
+        if (p.kind === 'fsa' && p.handle && (await p.handle.isSameEntry?.(handle))) return p.id;
+      }
+      const id = 'fsa:' + handle.name + ':' + crypto.randomUUID().slice(0, 6);
+      const proj = emptyProj(id, { name: handle.name, kind: 'fsa', handle });
+      projects.set(id, proj);
+      await dbPut('projects', serializeProjMeta(proj));
+      return id;
+    } catch (e) {
+      if (e?.name === 'AbortError') return false;
+      // Fallback for non-FSA contexts / headless automated environments
+    }
+  }
+  const projRec = await pickLocalFolderViaInput();
+  if (!projRec) return false;
+  const proj = emptyProj(projRec.id, projRec);
+  projects.set(proj.id, proj);
+  return proj.id;
+}
 
 // ---------- workspace + multi-project taskbar & resource hibernation ----------
 const expanded = new Set();
 let selected = null; // { rel, dir } last clicked row in the explorer
-const emptyProj = p => ({
-  root: p, name: base(p), active: null, tabs: [], expanded: [], selected: null, recent: [],
-  terms: [], termOnId: null, panelOpen: false,
-  agent: { sid: null, acp: null, name: '', state: 'off', lineCursor: 0, pending: new Map(), toolEls: new Map(), turn: null, curText: null, curThought: null, outEl: null, outN: 0, logFrag: null },
+const serializeProjMeta = p => ({
+  id: p.id || p.root, root: p.root, name: p.name, kind: p.kind || 'idb',
+  handle: p.handle || null, remote: p.remote || null, branch: p.branch || 'main',
+  isRepo: !!p.isRepo, folders: p.folders || [], staged: p.staged || [], commits: p.commits || [],
 });
+const emptyProj = (id, extra = {}) => ({
+  id, root: id, name: extra.name || base(id), kind: extra.kind || 'idb', handle: extra.handle || null,
+  remote: extra.remote || null, branch: extra.branch || 'main', isRepo: !!extra.isRepo,
+  folders: extra.folders || [], staged: extra.staged || [], commits: extra.commits || [],
+  active: null, tabs: [], expanded: [], selected: null, recent: [],
+  terms: [], termOnId: null, panelOpen: false, _fileMap: null,
+});
+const activeProj = () => projects.get(root) || null;
+const persistProjectOrder = async () => {
+  await dbPut('meta', { key: 'projects', value: [...projects.keys()] });
+  await dbPut('meta', { key: 'activeProject', value: root });
+};
 const projDirty = p => (p.root === root ? [...tabs.values()].some(isDirty) : p.tabs.some(t => t.dirty));
 function renderProjectBar() {
   const bar = $('#ws-tasks');
@@ -849,7 +1189,7 @@ function renderProjectBar() {
     const item = el('div', 'ws-task' + (on ? ' on' : ''));
     item.setAttribute('role', 'tab');
     item.setAttribute('aria-selected', String(on));
-    item.title = `${p.root}${p.root !== root ? ' (休眠中 — 点击唤醒切换)' : ' (当前运行)'}`;
+    item.title = `${p.name} (${p.kind === 'gh' ? 'GitHub · IndexedDB' : p.kind === 'fsa' ? '本地目录句柄' : '浏览器 IndexedDB'})${p.root !== root ? ' — 休眠中，点击唤醒' : ' — 当前运行'}`;
     const dot = el('span', 'ws-dot');
     const name = el('span', 'ws-name', p.name);
     const nodes = [dot, name];
@@ -878,8 +1218,8 @@ function fileIcon(name) {
 
 async function renderDir(dir, ul, depth) {
   let items;
-  try { items = (await getJSON('/fs/tree?dir=' + enc(dir))).filter(it => !HIDDEN.has(it.name)); }
-  catch (e) { expanded.delete(dir); if (!dir) fail(e); return; }
+  try { items = await vfsListDir(activeProj(), dir); }
+  catch (e) { expanded.delete(dir); if (!dir) toast(e.message, 'warn'); return; }
   const lis = [];
   for (const it of items) {
     const rel = dir ? dir + '/' + it.name : it.name;
@@ -970,8 +1310,8 @@ function newEntry(kind) {
       busy = true;
       treeQueue(async () => {
         try {
-          if (kind === 'file') await api('/fs/file?create=1&path=' + enc(rel), { method: 'PUT', body: '' });
-          else await postJSON('/fs/mkdir', { path: rel });
+          if (kind === 'file') await vfsWriteFile(activeProj(), rel, '', { create: true });
+          else await vfsMkdir(activeProj(), rel);
         } catch (err) {
           busy = false; row.classList.add('bad'); input.focus();
           return toast(err.status === 409 ? `"${name}" already exists. Choose a different name.` : err.message, 'error');
@@ -989,26 +1329,20 @@ function newEntry(kind) {
 
 function hibernateCurrent(projRoot = root) {
   if (!projRoot) return;
+  const curProj = projects.get(projRoot) || emptyProj(projRoot);
   const prevActive = active;
   if (active && tabs.has(active)) {
     const cur = tabs.get(active);
     if (cur.model) cur.view = editor.saveViewState();
   }
   closeCompare();
-  watchCtl?.abort(); watchCtl = null;
-  clearTimeout(diskTimer); diskChanged.clear(); structural = false;
   clearTimeout(gitTimer); gitSeq++;
   const tabSnaps = [];
   for (const [rel, t] of tabs) {
     const dirty = isDirty(t);
     tabSnaps.push({
-      rel,
-      preview: t.preview,
-      etag: t.etag,
-      bom: t.bom,
-      dirty,
-      text: dirty ? (t.model ? fileText(t) : t.text) : undefined,
-      view: t.view,
+      rel, preview: t.preview, etag: t.etag, bom: t.bom, dirty,
+      text: dirty ? (t.model ? fileText(t) : t.text) : undefined, view: t.view,
     });
     t.model?.dispose();
   }
@@ -1016,46 +1350,24 @@ function hibernateCurrent(projRoot = root) {
   active = null;
   editor?.setModel(blankModel);
   const termSnaps = terms.map(x => {
-    if (x.attached) { x.ctl.abort(); x.term.dispose(); x.box.remove(); }
-    return { id: x.id, pty: x.pty, name: x.name, line: x.line || '' };
+    if (x.attached) { x.term.dispose(); x.box.remove(); }
+    return { id: x.id, name: x.name, cwd: x.cwd || '', line: x.line || '', hist: x.hist || [] };
   });
   const termOnId = termOn?.id || null;
   const panelOpen = !$('#panel').hidden;
   terms.length = 0; termOn = null;
   $('#terms').replaceChildren();
   showPanel(false);
-  agentCtl?.abort(); agentCtl = null;
-  let logFrag = null;
-  if (!$('#chat-empty')) {
-    logFrag = document.createDocumentFragment();
-    while ($('#log').firstChild) logFrag.append($('#log').firstChild);
-  }
-  const agentSnap = {
-    sid, acp, name: agentName, state: agentState, lineCursor: agentLineCursor,
-    pending: new Map(pending), toolEls: new Map(toolEls),
-    turn, curText, curThought, outEl, outN, logFrag,
-  };
-  sid = acp = null; agentName = ''; agentState = 'off'; agentLineCursor = 0;
-  pending.clear(); toolEls.clear();
-  turn = curText = curThought = outEl = null; outN = 0;
-  setAgent('off'); chatEmpty();
   $('#tree').replaceChildren();
   $('#sr-res').replaceChildren(); $('#sr-msg').textContent = ''; sr.last = null;
   $('#git-list').replaceChildren(); gitState = null; gitCommits = [];
   qo.files = []; qo.truncated = false; qo.loaded = false;
-  projects.set(projRoot, {
-    root: projRoot,
-    name: base(projRoot),
-    active: prevActive,
-    tabs: tabSnaps,
-    expanded: [...expanded],
-    selected,
-    recent: [...recent],
-    terms: termSnaps,
-    termOnId,
-    panelOpen,
-    agent: agentSnap,
+  curProj._fileMap = null; // drop in-memory file cache so hibernated projects consume zero RAM
+  Object.assign(curProj, {
+    root: projRoot, active: prevActive, tabs: tabSnaps, expanded: [...expanded], selected,
+    recent: [...recent], terms: termSnaps, termOnId, panelOpen,
   });
+  projects.set(projRoot, curProj);
 }
 
 async function restoreProject(projRoot) {
@@ -1068,15 +1380,8 @@ async function restoreProject(projRoot) {
   tabs.clear();
   for (const ts of snap.tabs) {
     tabs.set(ts.rel, {
-      model: null,
-      saved: ts.dirty ? -1 : 0,
-      etag: ts.etag,
-      bom: !!ts.bom,
-      preview: !!ts.preview,
-      reloading: false,
-      dirty: !!ts.dirty,
-      text: ts.text,
-      view: ts.view || null,
+      model: null, saved: ts.dirty ? -1 : 0, etag: ts.etag, bom: !!ts.bom,
+      preview: !!ts.preview, reloading: false, dirty: !!ts.dirty, text: ts.text, view: ts.view || null,
     });
   }
   active = null;
@@ -1085,35 +1390,24 @@ async function restoreProject(projRoot) {
   termOn = terms.find(x => x.id === snap.termOnId) || terms[0] || null;
   renderTerms();
   if (snap.panelOpen && terms.length) showPanel(true); else showPanel(false);
-  const ag = snap.agent || emptyProj(projRoot).agent;
-  sid = ag.sid; acp = ag.acp; agentName = ag.name || ''; agentState = ag.state || 'off';
-  agentLineCursor = ag.lineCursor || 0;
-  pending.clear(); ag.pending?.forEach((v, k) => pending.set(k, v));
-  toolEls.clear(); ag.toolEls?.forEach((v, k) => toolEls.set(k, v));
-  turn = ag.turn; curText = ag.curText; curThought = ag.curThought; outEl = ag.outEl; outN = ag.outN || 0;
-  if (ag.logFrag) $('#log').replaceChildren(ag.logFrag); else chatEmpty();
-  if (agentName) $('#agent').value = agentName;
-  setAgent(agentState);
-  if (sid) pump(sid, agentLineCursor).catch(() => {});
   $('#ws').hidden = !root; $('#welcome').hidden = !!root;
-  $('#ws-name').textContent = base(root);
-  $('#ws-head').title = root || '';
-  document.title = root ? `${base(root)} — WebIDE` : 'WebIDE';
+  $('#ws-name').textContent = snap.name;
+  $('#ws-head').title = `${snap.name} (Browser-Local)`;
+  document.title = root ? `${snap.name} — WebIDE` : 'WebIDE';
   sr.last = null; $('#sr-res').replaceChildren(); $('#sr-msg').textContent = '';
   showHome(false);
   await activate(snap.active);
-  watchRoot();
   await renderTree();
   scheduleGitRefresh(0);
   renderProjectBar();
+  persistProjectOrder().catch(() => {});
 }
 
 async function switchProject(targetRoot) {
   if (!targetRoot) return;
   if (targetRoot === root) return showHome(false);
   if (root) hibernateCurrent(root);
-  const d = await (await postJSON('/root', { path: targetRoot, projects: [...projects.keys()] })).json();
-  root = d.root;
+  root = targetRoot;
   await restoreProject(root);
 }
 
@@ -1123,36 +1417,31 @@ async function closeProject(projRoot) {
   if (projRoot === root) {
     const dirty = [...tabs].filter(([, t]) => isDirty(t)).map(([r]) => r);
     if (dirty.length) {
-      const r = await modal(`Do you want to save the changes to ${dirty.length === 1 ? base(dirty[0]) : dirty.length + ' files'} before closing ${base(projRoot)}?`,
+      const r = await modal(`Do you want to save the changes to ${dirty.length === 1 ? base(dirty[0]) : dirty.length + ' files'} before closing ${p.name}?`,
         "Your changes will be lost if you don't save them.",
         [{ label: dirty.length === 1 ? 'Save' : 'Save All', value: 'save', primary: true }, { label: "Don't Save", value: 'discard' }, { label: 'Cancel', value: 'cancel' }]);
       if (r === 'cancel') return false;
       if (r === 'save' && !(await saveAll())) return false;
     }
-    await stopAgent(true);
     terms.slice().forEach(killTerm);
     closeAll(true);
-    watchCtl?.abort(); watchCtl = null;
-    clearTimeout(diskTimer); diskChanged.clear(); structural = false;
     clearTimeout(gitTimer); gitSeq++;
-  } else {
-    if (p.tabs.some(t => t.dirty)) {
-      await switchProject(projRoot);
-      return closeProject(projRoot);
-    }
-    p.terms.forEach(t => api('/term/' + t.id, { method: 'DELETE' }).catch(() => {}));
-    if (p.agent?.sid) api('/agent/' + p.agent.sid, { method: 'DELETE' }).catch(() => {});
+  } else if (p.tabs.some(t => t.dirty)) {
+    await switchProject(projRoot);
+    return closeProject(projRoot);
   }
   projects.delete(projRoot);
+  await dbDel('projects', projRoot);
+  if (p.kind !== 'fsa') await dbDelByProj('files', projRoot);
+  await dbDelByProj('snapshots', projRoot);
   if (projRoot === root) {
     const next = [...projects.keys()].pop() || null;
     if (next) {
-      const d = await (await postJSON('/root', { path: next, projects: [...projects.keys()] })).json();
-      root = d.root;
+      root = next;
       await restoreProject(root);
     } else {
-      await postJSON('/root', { path: null, projects: [] });
       root = null;
+      await persistProjectOrder();
       expanded.clear(); selected = null; recent.length = 0;
       $('#ws').hidden = true; $('#welcome').hidden = false;
       $('#ws-name').textContent = ''; $('#ws-head').title = '';
@@ -1165,17 +1454,22 @@ async function closeProject(projRoot) {
       scheduleGitRefresh(0);
     }
   } else {
-    await postJSON('/projects', { projects: [...projects.keys()] });
+    await persistProjectOrder();
     renderProjectBar();
   }
   return true;
 }
 
 async function loadRoot() {
-  const d = await getJSON('/root');
+  const savedProjs = await dbAll('projects').catch(() => []);
+  const orderMeta = await dbGet('meta', 'projects').catch(() => null);
+  const activeMeta = await dbGet('meta', 'activeProject').catch(() => null);
   projects.clear();
-  for (const p of d.projects || (d.root ? [d.root] : [])) projects.set(p, emptyProj(p));
-  root = d.root || null;
+  const byId = new Map(savedProjs.map(p => [p.id, p]));
+  const ids = orderMeta?.value?.length ? orderMeta.value.filter(id => byId.has(id)) : [...byId.keys()];
+  for (const id of byId.keys()) if (!ids.includes(id)) ids.push(id);
+  for (const id of ids) projects.set(id, emptyProj(id, byId.get(id)));
+  root = (activeMeta?.value && projects.has(activeMeta.value)) ? activeMeta.value : (ids[ids.length - 1] || null);
   if (root) {
     await restoreProject(root);
   } else {
@@ -1220,8 +1514,8 @@ const isDirty = t => (t.model ? t.model.getAlternativeVersionId() !== t.saved : 
 // Response.text() silently drops a UTF-8 BOM; keep it (common in Windows files) so saving doesn't rewrite the file.
 // etag = the disk version this text came from; Save sends it back so the bridge can refuse to clobber someone else's change.
 async function readFile(rel) {
-  const r = await api('/fs/file?path=' + enc(rel));
-  return { text: new TextDecoder('utf-8', { ignoreBOM: true }).decode(await r.arrayBuffer()), etag: r.headers.get('x-etag') };
+  const d = await vfsReadFile(activeProj(), rel);
+  return { text: d.text, etag: d.etag };
 }
 const fileText = t => (t.model ? t.model.getValue(monaco.editor.EndOfLinePreference.TextDefined, true) : (t.text ?? '')); // keeps the file's own EOL + BOM
 
@@ -1403,8 +1697,7 @@ async function saveTab(rel, force = false) {
   if (!t.model) await ensureTabModel(rel, t);
   const version = t.model.getAlternativeVersionId();
   try {
-    const r = await api('/fs/file?path=' + enc(rel), { method: 'PUT', body: fileText(t), headers: force || !t.etag ? {} : { 'if-match': t.etag } });
-    t.etag = (await r.json()).etag;
+    t.etag = await vfsWriteFile(activeProj(), rel, fileText(t), { force, expectedEtag: force ? null : t.etag });
   } catch (e) {
     if (e.status !== 412) throw e;
     return saveConflict(rel);
@@ -1488,7 +1781,8 @@ async function reloadFile(rel) {
 async function reloadClean() { for (const rel of [...tabs.keys()]) await reloadFile(rel); }
 const langName = id => monaco.languages.getLanguages().find(l => l.id === id)?.aliases?.[0] ?? id;
 function updateStatus() {
-  $('#st-root').replaceChildren(icon(root ? 'folder' : 'folder-opened'), el('span', '', root ? base(root) : 'Open Folder'));
+  const cur = activeProj();
+  $('#st-root').replaceChildren(icon(cur ? 'folder' : 'folder-opened'), el('span', '', cur ? cur.name : 'Open Folder'));
   const m = active && editor?.getModel();
   $('#st-pos').hidden = $('#st-lang').hidden = $('#st-eol').hidden = $('#st-enc').hidden = $('#st-indent').hidden = !m;
   if (!m) return;
@@ -1550,16 +1844,16 @@ addEventListener('keydown', e => {
     : null;
   if (!action) return;
   e.preventDefault(); e.stopPropagation(); // also keeps the browser's print / save-page / open-file dialogs away
-  if ($('#qp').open || $('#qo').open || $('#modal').open || $('#gitdlg').open || $('#extdlg').open) return; // but don't act underneath an open dialog
+  if ($('#qo').open || $('#modal').open || $('#gitdlg').open || $('#extdlg').open) return; // but don't act underneath an open dialog
   action();
 }, true);
 addEventListener('beforeunload', e => {
   if ([...tabs.values()].some(isDirty) || [...projects.values()].some(p => p.root !== root && p.tabs.some(t => t.dirty))) e.preventDefault();
 });
 
-// ---------- terminal panel (xterm.js; hibernated projects detach & dispose xterm.js to save browser RAM) ----------
-const terms = []; // { id, pty, name, line, attached, term?, fit?, box?, ctl? }
-let termOn = null;
+// ---------- terminal panel (xterm.js browser-local shell over IndexedDB/FSA; zero server shell execution) ----------
+const terms = []; // { id, name, cwd, line, hist, attached, term?, fit?, box? }
+let termOn = null, termSeq = 0;
 const TERM_THEME = { // OpenIDE Obsidian
   background: '#0d0d12', foreground: '#d4d4e0', cursor: '#38bdf8', selectionBackground: '#6366f144',
   black: '#000000', red: '#f87171', green: '#34d399', yellow: '#fbbf24', blue: '#60a5fa', magenta: '#c084fc', cyan: '#22d3ee', white: '#e5e5e5',
@@ -1577,7 +1871,7 @@ function toggleTerminal() {
   if ($('#panel').hidden) { if (terms.length) showPanel(true); else newTerminal().catch(fail); } else showPanel(false);
 }
 function renderTerms() {
-  const many = terms.length > 1; // like VS Code: the list only appears once there is a choice
+  const many = terms.length > 1;
   $('#terms').replaceChildren(...(many ? terms.map(x => {
     const b = el('div', 'tt' + (x === termOn ? ' on' : '')); b.setAttribute('role', 'tab');
     b.append(icon('terminal'), el('span', '', x.name));
@@ -1585,32 +1879,135 @@ function renderTerms() {
     return b;
   }) : []));
 }
+const termPrompt = x => {
+  const p = activeProj();
+  const baseName = p ? p.name : 'webide';
+  const loc = x.cwd ? `${baseName}/${x.cwd}` : baseName;
+  return `\r\n\x1b[38;5;75m${loc}\x1b[0m \x1b[38;5;141m❯\x1b[0m `;
+};
+function normRelJoin(cwd, arg = '') {
+  const parts = (arg.startsWith('/') ? arg.slice(1) : (cwd ? cwd + '/' + arg : arg)).split('/');
+  const out = [];
+  for (const s of parts) {
+    if (!s || s === '.') continue;
+    if (s === '..') out.pop();
+    else out.push(s);
+  }
+  return out.join('/');
+}
+async function runBrowserTermCmd(x, rawLine) {
+  const line = rawLine.trim();
+  const out = s => x.term?.write(s.replace(/\r?\n/g, '\r\n'));
+  if (!line) return;
+  const parts = line.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map(s => s.replace(/^['"]|['"]$/g, '')) || [];
+  const cmd = parts[0], arg = parts[1] || '';
+  const proj = activeProj();
+  try {
+    if (cmd === 'clear') { x.term?.clear(); return; }
+    if (cmd === 'help') {
+      out('Browser-Local Shell (zero server execution)\nCommands: help, pwd, ls [dir], cd [dir], cat <file>, head <file>, touch <file>, mkdir <dir>, rm <path>, find [substr], git status|log, ext list, clear\n');
+    } else if (cmd === 'pwd') {
+      out('/' + (proj ? (x.cwd ? proj.name + '/' + x.cwd : proj.name) : '') + '\n');
+    } else if (cmd === 'whoami') {
+      out('browser-local (isolated IndexedDB/FSA workspace)\n');
+    } else if (!proj) {
+      out('No workspace open.\n');
+    } else if (cmd === 'ls') {
+      const target = normRelJoin(x.cwd, arg);
+      const list = await vfsListDir(proj, target);
+      out(list.map(i => i.dir ? `\x1b[34m${i.name}/\x1b[0m` : i.name).join('  ') + (list.length ? '\n' : ''));
+    } else if (cmd === 'cd') {
+      const target = normRelJoin(x.cwd, arg);
+      if (target) await vfsListDir(proj, target);
+      x.cwd = target;
+    } else if (cmd === 'cat' || cmd === 'head') {
+      if (!arg) { out(`Usage: ${cmd} <file>\n`); return; }
+      const { text } = await vfsReadFile(proj, normRelJoin(x.cwd, arg));
+      const lines = text.split(/\r?\n/);
+      out((cmd === 'head' ? lines.slice(0, 20) : lines).join('\n') + '\n');
+    } else if (cmd === 'touch') {
+      if (!arg) { out('Usage: touch <file>\n'); return; }
+      await vfsWriteFile(proj, normRelJoin(x.cwd, arg), '', { create: true });
+      await renderTree();
+    } else if (cmd === 'mkdir') {
+      if (!arg) { out('Usage: mkdir <dir>\n'); return; }
+      await vfsMkdir(proj, normRelJoin(x.cwd, arg));
+      await renderTree();
+    } else if (cmd === 'rm') {
+      if (!arg) { out('Usage: rm <path>\n'); return; }
+      await vfsDelete(proj, normRelJoin(x.cwd, arg));
+      await renderTree();
+    } else if (cmd === 'find') {
+      const { files } = await vfsAllFiles(proj);
+      const filtered = arg ? files.filter(f => f.toLowerCase().includes(arg.toLowerCase())) : files;
+      out(filtered.slice(0, 200).join('\n') + (filtered.length ? '\n' : ''));
+    } else if (cmd === 'ext' && arg === 'list') {
+      out(installedExts.map(e => `${e.id} v${e.version} [${e.enabled ? 'enabled' : 'disabled'}]`).join('\n') + (installedExts.length ? '\n' : 'No extensions installed.\n'));
+    } else if (cmd === 'git') {
+      await refreshGit();
+      if (arg === 'log') out((gitCommits || []).map(c => `${c.shortHash} ${c.subject} (${c.date})`).join('\n') + '\n');
+      else if (gitState?.isRepo) out(`On branch ${gitState.branch}\nStaged: ${gitState.staged.length}, Changes: ${gitState.unstaged.length}\n`);
+      else out('Not an initialized repository snapshot.\n');
+    } else {
+      out(`Unknown command: ${cmd}. Type 'help' for available browser-local commands.\n`);
+    }
+  } catch (e) { out(`\x1b[31m${e.message}\x1b[0m\n`); }
+}
 function attachTerm(x) {
   if (x.attached) return;
   const box = el('div'); box.style.visibility = 'hidden'; $('#termbody').append(box);
   const term = new Terminal({ fontFamily: editor.getRawOptions().fontFamily, fontSize: 12, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, theme: TERM_THEME });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit); term.open(box); fit.fit();
-  Object.assign(x, { term, fit, box, ctl: new AbortController(), attached: true });
-  // Keystrokes go out in order, coalesced while a request is in flight.
-  let pend = '', busy = false;
-  const send = async s => {
-    pend += s; if (busy) return; busy = true;
-    while (pend) { const b = pend; pend = ''; try { await api(`/term/${x.id}/input`, { method: 'POST', body: b }); } catch { pend = ''; } }
-    busy = false;
-  };
-  term.onData(x.pty ? send : d => lineMode(x, d, send));
-  term.onResize(({ cols, rows }) => postJSON(`/term/${x.id}/resize`, { cols, rows }).catch(() => {}));
+  Object.assign(x, { term, fit, box, attached: true, busy: false });
+  term.write('\x1b[38;5;245mWebIDE Browser-Local Shell — all commands stay inside this browser.\x1b[0m\r\nType \x1b[36mhelp\x1b[0m for commands.');
+  term.write(termPrompt(x));
+  let hIdx = -1;
+  term.onData(async d => {
+    if (x.busy) return;
+    if (d === '\x1b[A') { // up history
+      if (!x.hist.length) return;
+      hIdx = hIdx < 0 ? x.hist.length - 1 : Math.max(0, hIdx - 1);
+      const n = [...x.line].length;
+      if (n) term.write(`\x1b[${n}D\x1b[K`);
+      x.line = x.hist[hIdx]; term.write(x.line); return;
+    }
+    if (d === '\x1b[B') {
+      if (hIdx < 0) return;
+      const n = [...x.line].length;
+      if (n) term.write(`\x1b[${n}D\x1b[K`);
+      hIdx = hIdx + 1 < x.hist.length ? hIdx + 1 : -1;
+      x.line = hIdx < 0 ? '' : x.hist[hIdx]; term.write(x.line); return;
+    }
+    if (d.startsWith('\x1b')) return;
+    for (const ch of d.replace(/\r\n|\n/g, '\r')) {
+      if (ch === '\r') {
+        const cmdLine = x.line;
+        if (cmdLine.trim()) x.hist.push(cmdLine);
+        hIdx = -1; x.line = '';
+        term.write('\r\n');
+        x.busy = true;
+        await runBrowserTermCmd(x, cmdLine);
+        x.busy = false;
+        if (x.attached) term.write(termPrompt(x));
+      } else if (ch === '\x7f') {
+        if (x.line) { x.line = [...x.line].slice(0, -1).join(''); term.write('\b \b'); }
+      } else if (ch === '\x03') {
+        term.write('^C'); x.line = ''; term.write(termPrompt(x));
+      } else if (ch >= ' ') {
+        x.line += ch; term.write(ch);
+      }
+    }
+  });
   term.attachCustomKeyEventHandler(e => {
     if (e.type !== 'keydown') return true;
-    if (isMac && e.metaKey && e.key === 'k') { term.clear(); return false; } // ⌘K clears, as in VS Code
-    if (!isMac && e.ctrlKey && !e.altKey && !e.shiftKey) { // Windows/Linux: Ctrl+C copies when text is selected, Ctrl+V pastes
+    if (isMac && e.metaKey && e.key === 'k') { term.clear(); term.write(termPrompt(x)); return false; }
+    if (!isMac && e.ctrlKey && !e.altKey && !e.shiftKey) {
       if (e.key === 'c' && term.hasSelection()) { navigator.clipboard.writeText(term.getSelection()); term.clearSelection(); return false; }
-      if (e.key === 'v') return false; // leave it to the browser's paste event
+      if (e.key === 'v') return false;
     }
     return true;
   });
-  readTerm(x);
 }
 function focusTerm(x) {
   termOn = x;
@@ -1620,65 +2017,16 @@ function focusTerm(x) {
   if (x.attached) requestAnimationFrame(() => { x.fit.fit(); x.term.focus(); });
 }
 async function newTerminal() {
-  if (!root) throw new Error('Open a folder first: the terminal starts in it.');
+  if (!root) throw new Error('Open a folder or GitHub repository first.');
   showPanel(true);
-  const box = el('div'); box.style.visibility = 'hidden'; $('#termbody').append(box);
-  const term = new Terminal({ fontFamily: editor.getRawOptions().fontFamily, fontSize: 12, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, theme: TERM_THEME });
-  const fit = new FitAddon.FitAddon();
-  term.loadAddon(fit); term.open(box); fit.fit();
-  let r;
-  try { r = await (await postJSON('/term', { cols: term.cols, rows: term.rows })).json(); } catch (e) { term.dispose(); box.remove(); if (!terms.length) showPanel(false); throw e; }
   const used = new Set(terms.map(t => t.name));
-  let name = r.name, k = 2;
-  while (used.has(name)) name = `${r.name} (${k++})`;
-  const x = { id: r.id, pty: r.pty, name, line: '', term, fit, box, ctl: new AbortController(), attached: true };
+  let name = 'local', k = 2;
+  while (used.has(name)) name = `local (${k++})`;
+  const x = { id: 't' + (++termSeq), name, cwd: '', line: '', hist: [], attached: false };
   terms.push(x);
-  // Keystrokes go out in order, coalesced while a request is in flight.
-  let pend = '', busy = false;
-  const send = async s => {
-    pend += s; if (busy) return; busy = true;
-    while (pend) { const b = pend; pend = ''; try { await api(`/term/${x.id}/input`, { method: 'POST', body: b }); } catch { pend = ''; } }
-    busy = false;
-  };
-  term.onData(r.pty ? send : d => lineMode(x, d, send));
-  term.onResize(({ cols, rows }) => postJSON(`/term/${x.id}/resize`, { cols, rows }).catch(() => {}));
-  term.attachCustomKeyEventHandler(e => {
-    if (e.type !== 'keydown') return true;
-    if (isMac && e.metaKey && e.key === 'k') { term.clear(); return false; } // ⌘K clears, as in VS Code
-    if (!isMac && e.ctrlKey && !e.altKey && !e.shiftKey) { // Windows/Linux: Ctrl+C copies when text is selected, Ctrl+V pastes
-      if (e.key === 'c' && term.hasSelection()) { navigator.clipboard.writeText(term.getSelection()); term.clearSelection(); return false; }
-      if (e.key === 'v') return false; // leave it to the browser's paste event
-    }
-    return true;
-  });
   focusTerm(x);
-  readTerm(x);
 }
-async function readTerm(x) {
-  try {
-    const r = await api(`/term/${x.id}/stream`, { signal: x.ctl.signal });
-    const rd = r.body.getReader(), dec = new TextDecoder();
-    let buf = '';
-    for (;;) {
-      const { value, done } = await rd.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let i;
-      while ((i = buf.indexOf('\n\n')) >= 0) {
-        const d = buf.slice(0, i); buf = buf.slice(i + 2);
-        if (d.startsWith('data: ')) x.term.write(JSON.parse(d.slice(6)));
-      }
-    }
-  } catch { /* detached for hibernation, killed, or bridge gone */ }
-  if (x.ctl.signal.aborted) return; // detached for hibernation — keep backend PTY & term descriptor
-  dropTerm(x); // the shell exited (or the stream ended): close it, as VS Code does
-}
-function killTerm(x = termOn) {
-  if (!x) return;
-  if (x.attached) x.ctl.abort();
-  api('/term/' + x.id, { method: 'DELETE' }).catch(() => {});
-  dropTerm(x);
-}
+function killTerm(x = termOn) { if (x) dropTerm(x); }
 function dropTerm(x) {
   const i = terms.indexOf(x);
   if (i < 0) return;
@@ -1686,17 +2034,6 @@ function dropTerm(x) {
   if (x.attached) { x.term.dispose(); x.box.remove(); }
   if (termOn === x) termOn = null;
   if (terms.length) { if (!termOn) focusTerm(terms[Math.min(i, terms.length - 1)]); else renderTerms(); } else showPanel(false);
-}
-// Windows has no pty here, just cmd.exe over pipes: edit the line locally and send it on Enter. cmd echoes it back after its prompt.
-// ponytail: no arrows/history/tab completion and Ctrl+C only clears the line; a ConPTY addon would lift all of this.
-function lineMode(x, d, send) {
-  if (d.startsWith('\x1b')) return; // arrow keys and other escape sequences
-  for (const ch of d.replace(/\r\n|\n/g, '\r')) {
-    if (ch === '\r') { const n = [...x.line || ''].length; x.term.write(n ? `\x1b[${n}D\x1b[K` : ''); send((x.line || '') + '\r\n'); x.line = ''; }
-    else if (ch === '\x7f') { if (x.line) { x.line = [...x.line].slice(0, -1).join(''); x.term.write('\b \b'); } }
-    else if (ch === '\x03') { x.term.write('^C'); x.line = ''; send('\r\n'); }
-    else if (ch >= ' ') { x.line = (x.line || '') + ch; x.term.write(ch); }
-  }
 }
 new ResizeObserver(() => { if (!$('#panel').hidden) termOn?.fit.fit(); }).observe($('#termbody'));
 $('#term-new').onclick = () => newTerminal().catch(fail);
@@ -1754,8 +2091,7 @@ addEventListener('pointerdown', e => { if (!e.target.closest?.('#menu')) closeMe
 addEventListener('blur', closeMenu);
 addEventListener('resize', closeMenu);
 
-const sepOf = () => (root?.includes('\\') ? '\\' : '/');
-const absPath = rel => root + sepOf() + rel.replaceAll('/', sepOf());
+const absPath = rel => (activeProj()?.name || 'workspace') + '/' + rel;
 async function copy(text) {
   try { await navigator.clipboard.writeText(text); } catch { toast('Could not access the clipboard.', 'warn'); }
 }
@@ -1835,7 +2171,7 @@ function renameEntry(rel) {
       const to = parent ? parent + '/' + name : name;
       busy = true;
       treeQueue(async () => {
-        try { await postJSON('/fs/rename', { from: rel, to }); }
+        try { await vfsRename(activeProj(), rel, to); }
         catch (err) {
           busy = false; row.classList.add('bad'); input.focus();
           return toast(err.status === 409 ? `A file or folder named "${name}" already exists here. Choose a different name.` : err.message, 'error');
@@ -1845,6 +2181,7 @@ function renameEntry(rel) {
         selected = { rel: to, dir: isDir };
         moved(rel, to);
         await drawTree();
+        scheduleGitRefresh();
         $('#tree').focus();
       });
     };
@@ -1852,16 +2189,17 @@ function renameEntry(rel) {
 }
 
 async function deleteEntry(rel, isDir) {
-  const r = await modal(`Are you sure you want to delete '${base(rel)}'${isDir ? ' and its contents' : ''}?`, `You can restore it from the ${TRASH}.`,
-    [{ label: `Move to ${TRASH}`, value: 'ok', primary: true }, { label: 'Cancel', value: 'cancel' }]);
+  const r = await modal(`Are you sure you want to delete '${base(rel)}'${isDir ? ' and its contents' : ''}?`, 'This removes it from your browser workspace.',
+    [{ label: 'Delete', value: 'ok', primary: true }, { label: 'Cancel', value: 'cancel' }]);
   if (r !== 'ok') return;
-  await postJSON('/fs/delete', { path: rel });
+  await vfsDelete(activeProj(), rel);
   const gone = k => k === rel || k.startsWith(rel + '/');
   // Unsaved editors stay open (Save recreates the file); clean ones close.
   for (const k of [...tabs.keys()]) if (gone(k) && !isDirty(tabs.get(k))) closeTab(k, true);
   for (const k of [...expanded]) if (gone(k)) expanded.delete(k);
   if (selected && gone(selected.rel)) selected = null;
   await renderTree();
+  scheduleGitRefresh();
   $('#tree').focus();
 }
 
@@ -1947,59 +2285,21 @@ $('#tree').addEventListener('drop', async e => {
   clearTimeout(dragTimer); markDrop(null);
   const to = target ? target + '/' + base(from) : base(from);
   if (to === from || target === from || target.startsWith(from + '/')) return; // same folder, or into itself
-  const ok = await modal(`Are you sure you want to move '${base(from)}' into '${target ? base(target) : base(root)}'?`, '',
+  const ok = await modal(`Are you sure you want to move '${base(from)}' into '${target ? base(target) : (activeProj()?.name || 'workspace')}'?`, '',
     [{ label: 'Move', value: 'ok', primary: true }, { label: 'Cancel', value: 'cancel' }]);
   if (ok !== 'ok') return;
   treeQueue(async () => {
-    try { await postJSON('/fs/rename', { from, to }); }
-    catch (err) { return toast(err.status === 409 ? `'${base(from)}' already exists in '${target ? base(target) : base(root)}'.` : err.message, 'error'); }
+    try { await vfsRename(activeProj(), from, to); }
+    catch (err) { return toast(err.status === 409 ? `'${base(from)}' already exists here.` : err.message, 'error'); }
     if (target) expanded.add(target);
     selected = { rel: to, dir: isDir };
     moved(from, to);
     await drawTree();
+    scheduleGitRefresh();
   });
 });
 
-// ---------- live refresh: the bridge streams file-system changes ----------
-let watchCtl = null, diskTimer = null, structural = false;
-const diskChanged = new Set();
-async function watchRoot() {
-  watchCtl?.abort();
-  clearTimeout(diskTimer); diskChanged.clear(); structural = false;
-  if (!root) return;
-  const ctl = watchCtl = new AbortController();
-  try {
-    const r = await fetch('/fs/watch', { headers: { authorization: 'Bearer ' + token }, signal: ctl.signal });
-    if (!r.ok) return;
-    const rd = r.body.getReader(), dec = new TextDecoder();
-    let buf = '';
-    for (;;) {
-      const { value, done } = await rd.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let i;
-      while ((i = buf.indexOf('\n\n')) >= 0) {
-        const d = buf.slice(0, i); buf = buf.slice(i + 2);
-        if (d.startsWith('data: ')) onDiskChange(JSON.parse(d.slice(6)));
-      }
-    }
-  } catch { /* aborted (folder switched) or bridge gone; the heartbeat reports the latter */ }
-}
-function onDiskChange(events) {
-  for (const [rel, type] of events) { diskChanged.add(rel); if (type === 'rename') structural = true; } // rename = created/deleted/moved
-  clearTimeout(diskTimer);
-  diskTimer = setTimeout(flushDisk, 200);
-}
-function flushDisk() {
-  // Never redraw the tree under an inline name box; try again shortly.
-  if ($('#tree .row.edit, #tree .row.renaming')) { diskTimer = setTimeout(flushDisk, 1000); return; }
-  const rels = [...diskChanged]; diskChanged.clear();
-  if (structural) { structural = false; renderTree(); }
-  rels.filter(r => tabs.has(r)).forEach(r => reloadFile(r));
-  scheduleGitRefresh();
-}
-
-// ---------- Search view (Find in Files) ----------
+// ---------- Search view (Find in Files strictly in browser memory) ----------
 const sr = { case: false, word: false, regex: false, seq: 0, timer: null, collapsed: new Set(), last: null };
 function openSearch() {
   showView('search');
@@ -2012,10 +2312,10 @@ async function runSearch() {
   clearTimeout(sr.timer);
   const q = $('#sr-q').value, n = ++sr.seq;
   if (!q) { sr.last = null; $('#sr-res').replaceChildren(); $('#sr-msg').textContent = ''; return; }
-  if (!root) { $('#sr-msg').textContent = 'Open a folder to search its files.'; return; }
+  if (!root) { $('#sr-msg').textContent = 'Open a folder or GitHub repo to search its files.'; return; }
   $('#sr-msg').textContent = 'Searching…';
   let r;
-  try { r = await getJSON(`/fs/search?q=${enc(q)}&case=${+sr.case}&word=${+sr.word}&regex=${+sr.regex}`); }
+  try { r = await vfsSearch(activeProj(), q, { case: sr.case, word: sr.word, regex: sr.regex }); }
   catch (e) { if (n === sr.seq) { sr.last = null; $('#sr-res').replaceChildren(); $('#sr-msg').textContent = e.message; } return; }
   if (n !== sr.seq) return; // a newer search is on its way
   sr.last = r; sr.collapsed.clear();
@@ -2121,10 +2421,9 @@ const COMMANDS = () => [
   { label: 'Git: Clone from GitHub…', run: () => openGitDialog('clone') },
   { label: 'Git: Connect GitHub Remote…', run: () => openGitDialog('remote') },
   { label: 'Git: Checkout / Create Branch…', run: gitBranchPicker },
-  { label: 'Git: Pull', run: () => gitOp('/git/pull', {}, 'Pulled from remote.') },
-  { label: 'Git: Push', run: () => gitOp('/git/push', {}, 'Pushed to GitHub.') },
-  { label: 'Git: Fetch', run: () => gitOp('/git/fetch', {}, 'Fetched remote updates.') },
-  { label: 'Git: Initialize Repository', run: () => gitOp('/git/init', {}, 'Initialized Git repository.') },
+  { label: 'Git: Pull Updates from GitHub', run: () => gitPullFromGithub().catch(fail) },
+  { label: 'Workspace: Export Project as ZIP…', run: () => exportProjectZip().catch(fail) },
+  { label: 'Git: Initialize Local Snapshot Repository', run: () => gitInitRepo().catch(fail) },
   { label: 'View: Toggle Word Wrap', key: K.wrap, run: toggleWrap },
   { label: 'View: Toggle Terminal', key: K.term, run: toggleTerminal },
   { label: 'Terminal: Create New Terminal', key: K.newTerm, run: newTerminal },
@@ -2140,7 +2439,7 @@ async function ensureQoFiles() {
   qo.loading = true;
   const openRoot = root;
   try {
-    const d = await getJSON('/fs/files');
+    const d = await vfsAllFiles(activeProj());
     if (root === openRoot) { Object.assign(qo, d); qo.loaded = true; }
   } catch (e) { fail(e); }
   qo.loading = false;
@@ -2164,9 +2463,9 @@ function qoRender() {
     rows = list.filter(b => b.toLowerCase().includes(ql)).map(b => ({
       label: b === gitState.branch ? `${b} (current)` : b,
       pos: [],
-      run: () => gitOp('/git/checkout', { branch: b }, `Switched to ${b}`),
+      run: () => gitCheckoutLocal(b),
     }));
-    if (q && !list.includes(q)) rows.push({ label: `+ Create branch "${q}"`, pos: [], run: () => gitOp('/git/checkout', { branch: q, create: true }, `Created & switched to ${q}`) });
+    if (q && !list.includes(q)) rows.push({ label: `+ Create branch "${q}"`, pos: [], run: () => gitCheckoutLocal(q) });
     if (!rows.length) msg = 'Type a branch name to create one.';
   } else if (qo.mode === 'theme') {
     const q = v.trim().toLowerCase();
@@ -2247,7 +2546,7 @@ $('#qo').addEventListener('keydown', e => {
 $('#qo').addEventListener('cancel', e => { e.preventDefault(); qoClose(); });
 lightDismiss($('#qo'), qoClose);
 
-// ---------- Source Control (local git bridged to GitHub, no login/auth gate) ----------
+// ---------- Source Control & GitHub (100% browser IndexedDB snapshots/commits; zero code uploaded to server) ----------
 let gitState = null, gitCommits = [], gitSeq = 0, gitTimer = null;
 const gitCollapsed = new Set();
 function scheduleGitRefresh(delay = 150) {
@@ -2255,18 +2554,57 @@ function scheduleGitRefresh(delay = 150) {
   gitTimer = setTimeout(() => refreshGit().catch(() => {}), delay);
 }
 function openGitView() { showView('git'); refreshGit().catch(fail); }
+function parseGithubInput(raw) {
+  const s = String(raw || '').trim().replace(/\/+$/, '').replace(/\.git$/i, '');
+  let m = s.match(/^([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+)$/);
+  if (m) return `${m[1]}/${m[2]}`;
+  m = s.match(/^https?:\/\/github\.com\/([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+)(?:\/.*)?$/i)
+    || s.match(/^git@github\.com:([a-zA-Z0-9._-]+)\/([a-zA-Z0-9._-]+)$/i);
+  if (m) return `${m[1]}/${m[2]}`;
+  throw new Error('Enter a valid GitHub repository (owner/repo or https://github.com/owner/repo).');
+}
 async function refreshGit() {
-  const seq = ++gitSeq;
-  if (!root) {
-    gitState = null; gitCommits = [];
+  const seq = ++gitSeq, proj = activeProj();
+  if (!proj) { gitState = null; gitCommits = []; renderGit(); return; }
+  if (!proj.isRepo) {
+    gitState = { isRepo: false, staged: [], unstaged: [], remote: proj.remote || null, branch: proj.branch || 'main', branches: [proj.branch || 'main'] };
+    gitCommits = [];
     renderGit();
     return;
   }
-  const st = await getJSON('/git/status');
+  const snaps = await dbByProj('snapshots', proj.id);
+  const snapMap = new Map(snaps.map(s => [s.path, s.content]));
+  const { files } = await vfsAllFiles(proj, { skipHeavy: true, limit: 15000 });
+  const liveMap = new Map();
+  for (const rel of files) {
+    try {
+      const b = await vfsReadBytes(proj, rel);
+      liveMap.set(rel, b);
+    } catch {}
+  }
   if (seq !== gitSeq) return;
-  gitState = st;
-  gitCommits = st.isRepo ? await getJSON('/git/log?limit=15').catch(() => []) : [];
-  if (seq !== gitSeq) return;
+  const stagedSet = new Set(proj.staged || []), staged = [], unstaged = [];
+  for (const [rel, cur] of liveMap) {
+    const baseBytes = snapMap.get(rel);
+    if (!baseBytes) {
+      const it = { path: rel, status: 'A', untracked: true };
+      (stagedSet.has(rel) ? staged : unstaged).push(it);
+    } else if (bytesEtag(cur) !== bytesEtag(baseBytes)) {
+      const it = { path: rel, status: 'M', untracked: false };
+      (stagedSet.has(rel) ? staged : unstaged).push(it);
+    }
+  }
+  for (const rel of snapMap.keys()) {
+    if (!liveMap.has(rel)) {
+      const it = { path: rel, status: 'D', untracked: false };
+      (stagedSet.has(rel) ? staged : unstaged).push(it);
+    }
+  }
+  gitState = {
+    isRepo: true, branch: proj.branch || 'main', branches: [...new Set([proj.branch || 'main', ...(proj.branches || [])])],
+    remote: proj.remote || null, staged, unstaged, ahead: 0, behind: 0,
+  };
+  gitCommits = proj.commits || [];
   renderGit();
 }
 function renderGit() {
@@ -2275,18 +2613,17 @@ function renderGit() {
   $('#git-badge').textContent = total > 99 ? '99+' : String(total);
   $('#git-badge').hidden = !total;
   $('#st-git').hidden = !(st?.isRepo);
-  $('#st-sync').hidden = !(st?.isRepo && st.remote);
-  if (st?.isRepo) {
-    $('#st-git').replaceChildren(icon('source-control'), el('span', '', st.branch || 'HEAD'));
-    const syncTxt = (st.ahead ? ` ↑${st.ahead}` : '') + (st.behind ? ` ↓${st.behind}` : '');
-    $('#st-sync').replaceChildren(icon('sync'), ...(syncTxt ? [el('span', '', syncTxt.trim())] : []));
-    $('#st-sync').title = st.remote ? `Sync with ${st.remote.slug || st.remote.name}${syncTxt}` : 'Sync';
+  $('#st-sync').hidden = !root;
+  if (st?.isRepo) $('#st-git').replaceChildren(icon('source-control'), el('span', '', st.branch || 'main'));
+  if (root) {
+    $('#st-sync').replaceChildren(icon('desktop-download'), el('span', '', 'Export ZIP'));
+    $('#st-sync').title = 'Download browser workspace as ZIP (zero server upload)';
   }
   const isRepo = !!st?.isRepo;
   $('#git-empty').hidden = isRepo;
   $('#git-repo').hidden = !isRepo;
   $('#git-init-btn').hidden = !root || isRepo;
-  $('#git-empty-msg').textContent = root ? 'This folder is not a Git repository yet.' : 'Open a folder to use Source Control, or clone a repository directly from GitHub.';
+  $('#git-empty-msg').textContent = root ? 'Initialize a browser-local snapshot repository to track changes and diffs.' : 'Open a folder locally or clone a repository directly from GitHub into your browser.';
   if (!isRepo) return;
 
   const rem = $('#git-remote');
@@ -2330,11 +2667,11 @@ function renderGit() {
       b.onclick = e => { e.stopPropagation(); fn(); };
       act.append(b);
     };
-    if (!it.status.includes('D')) mk('go-to-file', 'Open File', () => openFile(it.path).catch(fail));
-    if (staged) mk('remove', 'Unstage Changes', () => gitOp('/git/unstage', { paths: [it.path] }));
+    if (it.status !== 'D') mk('go-to-file', 'Open File', () => openFile(it.path).catch(fail));
+    if (staged) mk('remove', 'Unstage Changes', () => gitStagePaths([it.path], false));
     else {
       mk('discard', 'Discard Changes', () => gitDiscard(it));
-      mk('add', 'Stage Changes', () => gitOp('/git/stage', { paths: [it.path] }));
+      mk('add', 'Stage Changes', () => gitStagePaths([it.path], true));
     }
     const stTag = el('span', `git-st ${it.status}`, it.status);
     row.append(fileIcon(base(it.path)), el('span', 'name', base(it.path)), ...(dir ? [el('span', 'qdesc', dir)] : []), act, stTag);
@@ -2344,14 +2681,14 @@ function renderGit() {
   const nodes = [];
   if (st.staged.length) {
     nodes.push(...sec('staged', 'Staged Changes', st.staged.length, [
-      { icon: 'remove', title: 'Unstage All Changes', run: () => gitOp('/git/unstage', {}) },
+      { icon: 'remove', title: 'Unstage All Changes', run: () => gitStagePaths(null, false) },
     ], st.staged.map(it => itemRow(it, true))));
   }
   nodes.push(...sec('changes', 'Changes', st.unstaged.length, st.unstaged.length ? [
-    { icon: 'add', title: 'Stage All Changes', run: () => gitOp('/git/stage', {}) },
+    { icon: 'add', title: 'Stage All Changes', run: () => gitStagePaths(null, true) },
   ] : [], st.unstaged.length ? st.unstaged.map(it => itemRow(it, false)) : [el('div', 'sr-msg', 'No uncommitted changes.')]));
   if (gitCommits.length) {
-    nodes.push(...sec('commits', 'Recent Commits', gitCommits.length, [], gitCommits.map(c => {
+    nodes.push(...sec('commits', 'Local Snapshot History', gitCommits.length, [], gitCommits.map(c => {
       const r = el('div', 'row git-commit');
       r.title = `${c.hash}\n${c.author} · ${c.date}\n${c.subject}`;
       const info = el('div', 'git-cinfo');
@@ -2364,7 +2701,12 @@ function renderGit() {
 }
 async function openGitDiff(rel, staged) {
   showHome(false);
-  const { original, modified } = await getJSON(`/git/diff?path=${enc(rel)}&staged=${staged ? '1' : '0'}`);
+  const proj = activeProj();
+  if (!proj) return;
+  const snap = await dbGet('snapshots', fKey(proj.id, rel));
+  let original = '', modified = '';
+  try { if (snap?.content) original = textDec.decode(snap.content); } catch {}
+  try { modified = (await vfsReadFile(proj, rel)).text; } catch {}
   closeCompare();
   const u0 = monaco.Uri.file('/__git_orig__/' + rel), u1 = monaco.Uri.file('/__git_mod__/' + rel);
   monaco.editor.getModel(u0)?.dispose(); monaco.editor.getModel(u1)?.dispose();
@@ -2374,47 +2716,165 @@ async function openGitDiff(rel, staged) {
   const openBtn = el('button', 'btn sec', 'Open File');
   openBtn.onclick = () => { closeCompare(); openFile(rel).catch(fail); };
   const stageBtn = el('button', 'btn', staged ? 'Unstage' : 'Stage');
-  stageBtn.onclick = async () => { await gitOp(staged ? '/git/unstage' : '/git/stage', { paths: [rel] }); closeCompare(); };
+  stageBtn.onclick = async () => { await gitStagePaths([rel], !staged); closeCompare(); };
   const x = el('button', 'ibtn'); x.title = 'Close'; x.append(icon('close')); x.onclick = () => closeCompare();
   const bar = el('div', 'dbar');
-  bar.append(icon('git-compare'), el('span', 'dt', `${rel} (${staged ? 'HEAD ↔ Staged' : 'Index ↔ Working Tree'})`), el('span', 'sp'), openBtn, stageBtn, x);
+  bar.append(icon('git-compare'), el('span', 'dt', `${rel} (Browser Snapshot ↔ Working Tree)`), el('span', 'sp'), openBtn, stageBtn, x);
   const host = el('div', 'dhost');
   box.append(bar, host); $('#edwrap').append(box);
   const de = monaco.editor.createDiffEditor(host, { automaticLayout: true, readOnly: true, originalEditable: false, fontFamily: editor.getRawOptions().fontFamily, fontSize: editor.getRawOptions().fontSize, wordWrap: prefs.wrap ? 'on' : 'off' });
   de.setModel({ original: orig, modified: mod });
   diff = { kind: 'git', rel, staged, de, orig, mod, box };
 }
-async function gitOp(endpoint, payload = {}, okMsg = '') {
-  try {
-    await postJSON(endpoint, payload);
-    if (okMsg) toast(okMsg);
-    if (endpoint === '/git/pull' || endpoint === '/git/checkout') { await renderTree().catch(() => {}); await reloadClean(); }
-    await refreshGit();
-  } catch (e) { fail(e); }
+async function gitStagePaths(paths, add = true) {
+  const proj = activeProj();
+  if (!proj || !gitState) return;
+  const set = new Set(proj.staged || []);
+  const targets = paths || (add ? gitState.unstaged.map(x => x.path) : gitState.staged.map(x => x.path));
+  for (const p of targets) add ? set.add(p) : set.delete(p);
+  proj.staged = [...set];
+  await dbPut('projects', serializeProjMeta(proj));
+  await refreshGit();
+}
+async function gitInitRepo() {
+  const proj = activeProj();
+  if (!proj) return toast('Open a folder first.', 'warn');
+  const { files } = await vfsAllFiles(proj, { skipHeavy: true, limit: 15000 });
+  const snaps = [];
+  for (const rel of files) {
+    try { snaps.push({ key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: await vfsReadBytes(proj, rel) }); } catch {}
+  }
+  await dbDelByProj('snapshots', proj.id);
+  if (snaps.length) await dbPutMany('snapshots', snaps);
+  proj.isRepo = true; proj.branch = proj.branch || 'main'; proj.staged = []; proj.commits = proj.commits || [];
+  await dbPut('projects', serializeProjMeta(proj));
+  toast('Initialized browser-local snapshot repository.');
+  await refreshGit();
 }
 async function gitDiscard(it) {
-  const msg = it.untracked ? `Move untracked file '${base(it.path)}' to ${TRASH}?` : `Discard changes in '${base(it.path)}'?`;
-  const r = await modal(msg, it.untracked ? `You can restore it from the ${TRASH}.` : 'This cannot be undone.',
-    [{ label: it.untracked ? `Move to ${TRASH}` : 'Discard Changes', value: 'ok', primary: true }, { label: 'Cancel', value: 'cancel' }]);
+  const proj = activeProj();
+  if (!proj) return;
+  const msg = it.untracked ? `Delete untracked file '${base(it.path)}'?` : `Discard changes in '${base(it.path)}'?`;
+  const r = await modal(msg, 'This reverts it to your browser snapshot baseline.',
+    [{ label: it.untracked ? 'Delete' : 'Discard Changes', value: 'ok', primary: true }, { label: 'Cancel', value: 'cancel' }]);
   if (r !== 'ok') return;
-  await gitOp('/git/discard', { path: it.path, untracked: !!it.untracked });
+  if (it.untracked) await vfsDelete(proj, it.path);
+  else {
+    const snap = await dbGet('snapshots', fKey(proj.id, it.path));
+    if (snap?.content) await vfsWriteFile(proj, it.path, snap.content, { force: true });
+  }
+  await renderTree().catch(() => {});
   await reloadClean();
+  await refreshGit();
 }
-async function gitCommit(andPush = false) {
-  if (!gitState?.isRepo) return;
+async function gitCommit() {
+  const proj = activeProj();
+  if (!proj?.isRepo) return;
   const message = $('#git-msg').value.trim();
   if (!message) { $('#git-msg').focus(); return toast('Enter a commit message first.', 'warn'); }
-  try {
-    if (!gitState.staged.length && gitState.unstaged.length) await postJSON('/git/stage', {});
-    await postJSON('/git/commit', { message });
-    $('#git-msg').value = '';
-    if (andPush) await postJSON('/git/push', {});
-    toast(andPush ? 'Committed and pushed to GitHub.' : 'Committed changes.');
-    await refreshGit();
-  } catch (e) { fail(e); }
+  const targets = (proj.staged?.length ? proj.staged : gitState.unstaged.map(x => x.path));
+  if (!targets.length) return toast('No changes to commit.', 'warn');
+  for (const rel of targets) {
+    try {
+      const b = await vfsReadBytes(proj, rel);
+      await dbPut('snapshots', { key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: b });
+    } catch {
+      await dbDel('snapshots', fKey(proj.id, rel));
+    }
+  }
+  const hash = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+  proj.staged = [];
+  proj.commits = [{ hash, shortHash: hash.slice(0, 7), subject: message, author: 'Browser-Local', date: new Date().toLocaleString() }, ...(proj.commits || [])].slice(0, 50);
+  await dbPut('projects', serializeProjMeta(proj));
+  $('#git-msg').value = '';
+  toast('Committed snapshot locally in browser IndexedDB.');
+  await refreshGit();
+}
+async function gitCheckoutLocal(branch) {
+  const proj = activeProj();
+  if (!proj) return;
+  proj.branch = branch;
+  proj.branches = [...new Set([...(proj.branches || ['main']), branch])];
+  await dbPut('projects', serializeProjMeta(proj));
+  toast(`Switched local branch label to ${branch}.`);
+  await refreshGit();
+}
+async function exportProjectZip() {
+  const proj = activeProj();
+  if (!proj) return toast('Open a project first.', 'warn');
+  const { files } = await vfsAllFiles(proj, { skipHeavy: true, limit: 20000 });
+  const entries = [];
+  for (const rel of files) {
+    try { entries.push([rel, await vfsReadBytes(proj, rel)]); } catch {}
+  }
+  const blob = buildZipBlob(entries);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${proj.name || 'workspace'}.zip`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  toast(`Exported ${entries.length} files to ${proj.name}.zip.`);
+}
+async function cloneGithubIntoBrowser(slug, branch = '') {
+  const meta = await getJSON('/proxy/github/meta?repo=' + enc(slug)).catch(() => ({ slug, defaultBranch: branch || 'main', htmlUrl: `https://github.com/${slug}` }));
+  const r = await api(`/proxy/github/archive?repo=${enc(slug)}&branch=${enc(branch)}`);
+  const zipEntries = await unzipBytes(await r.arrayBuffer());
+  const id = 'gh:' + slug + ':' + crypto.randomUUID().slice(0, 6);
+  const repoName = slug.split('/').pop();
+  const fileRecs = [], snapRecs = [];
+  for (const [rawPath, bytes] of zipEntries) {
+    const slash = rawPath.indexOf('/');
+    const rel = slash >= 0 ? rawPath.slice(slash + 1) : rawPath;
+    if (!rel || rel.split('/').some(s => HIDDEN.has(s))) continue;
+    fileRecs.push({ key: fKey(id, rel), projectId: id, path: rel, content: bytes, mtime: Date.now() });
+    snapRecs.push({ key: fKey(id, rel), projectId: id, path: rel, content: bytes });
+  }
+  const proj = emptyProj(id, {
+    name: repoName, kind: 'gh', isRepo: true, branch: branch || meta.defaultBranch || 'main',
+    remote: { slug, url: `https://github.com/${slug}.git`, githubUrl: meta.htmlUrl || `https://github.com/${slug}` },
+  });
+  await dbPutMany('files', fileRecs);
+  await dbPutMany('snapshots', snapRecs);
+  await dbPut('projects', serializeProjMeta(proj));
+  if (root) hibernateCurrent(root);
+  projects.set(id, proj);
+  root = id;
+  await restoreProject(root);
+  showView('explorer');
+  toast(`Cloned ${slug} (${fileRecs.length} files) strictly into browser IndexedDB.`);
+}
+async function gitPullFromGithub() {
+  const proj = activeProj();
+  if (!proj?.remote?.slug) return toast('Connect a GitHub remote first.', 'warn');
+  const slug = proj.remote.slug;
+  const r = await api(`/proxy/github/archive?repo=${enc(slug)}&branch=${enc(proj.branch || '')}`);
+  const zipEntries = await unzipBytes(await r.arrayBuffer());
+  const fileRecs = [], snapRecs = [];
+  for (const [rawPath, bytes] of zipEntries) {
+    const slash = rawPath.indexOf('/');
+    const rel = slash >= 0 ? rawPath.slice(slash + 1) : rawPath;
+    if (!rel || rel.split('/').some(s => HIDDEN.has(s))) continue;
+    if (proj.kind === 'fsa') {
+      await vfsWriteFile(proj, rel, bytes, { force: true });
+    } else {
+      fileRecs.push({ key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: bytes, mtime: Date.now() });
+    }
+    snapRecs.push({ key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: bytes });
+  }
+  if (proj.kind !== 'fsa') {
+    await dbDelByProj('files', proj.id);
+    await dbPutMany('files', fileRecs);
+    proj._fileMap = null;
+  }
+  await dbDelByProj('snapshots', proj.id);
+  await dbPutMany('snapshots', snapRecs);
+  await renderTree().catch(() => {});
+  await reloadClean();
+  await refreshGit();
+  toast(`Pulled latest snapshot from ${slug} into browser storage.`);
 }
 function gitBranchPicker() {
-  if (!gitState?.isRepo) return toast('Open a Git repository first.', 'warn');
+  if (!gitState?.isRepo) return toast('Initialize a repository snapshot first.', 'warn');
   quickOpen('', 'branch');
 }
 let gdMode = 'clone';
@@ -2422,11 +2882,11 @@ function openGitDialog(mode = 'clone') {
   gdMode = mode;
   const d = $('#gitdlg');
   $('#gd-err').hidden = true; $('#gd-err').textContent = '';
-  $('#gd-title').textContent = mode === 'clone' ? 'Clone from GitHub' : 'Connect GitHub Remote';
+  $('#gd-title').textContent = mode === 'clone' ? 'Clone from GitHub (Browser-Local)' : 'Connect GitHub Remote';
   $('#gd-ok').textContent = mode === 'clone' ? 'Clone' : 'Save Remote';
   $('#gd-dir-wrap').hidden = mode !== 'clone';
   $('#gd-url').value = mode === 'remote' ? (gitState?.remote?.url || '') : '';
-  if (mode === 'clone') $('#gd-dir').value = root ? root.split(/[\\/]/).slice(0, -1).join(sepOf()) : '';
+  if (mode === 'clone') $('#gd-dir').value = '';
   d.showModal();
   $('#gd-url').focus();
 }
@@ -2434,22 +2894,20 @@ $('#gd-cancel').onclick = () => $('#gitdlg').close();
 lightDismiss($('#gitdlg'), () => $('#gitdlg').close());
 $('#gd-form').onsubmit = async e => {
   e.preventDefault();
-  const url = $('#gd-url').value.trim(), parentDir = $('#gd-dir').value.trim();
-  if (!url) return;
+  const rawUrl = $('#gd-url').value.trim(), branch = $('#gd-dir').value.trim();
+  if (!rawUrl) return;
   $('#gd-err').hidden = true; $('#gd-ok').disabled = true;
-  $('#gd-ok').textContent = gdMode === 'clone' ? 'Cloning…' : 'Saving…';
+  $('#gd-ok').textContent = gdMode === 'clone' ? 'Downloading ZIP…' : 'Saving…';
   try {
+    const slug = parseGithubInput(rawUrl);
     if (gdMode === 'clone') {
-      const prev = root;
-      const d = await (await postJSON('/git/clone', { url, parentDir })).json();
+      await cloneGithubIntoBrowser(slug, branch);
       $('#gitdlg').close();
-      if (prev && d.root !== prev) hibernateCurrent(prev);
-      root = d.root;
-      await restoreProject(root);
-      showView('explorer');
-      toast('Cloned repository from GitHub.');
     } else {
-      await postJSON('/git/remote', { url });
+      const proj = activeProj();
+      if (!proj) throw new Error('Open a project first.');
+      proj.remote = { slug, url: `https://github.com/${slug}.git`, githubUrl: `https://github.com/${slug}` };
+      await dbPut('projects', serializeProjMeta(proj));
       $('#gitdlg').close();
       await refreshGit();
       toast('Connected GitHub remote.');
@@ -2461,192 +2919,30 @@ $('#gd-form').onsubmit = async e => {
     $('#gd-ok').textContent = gdMode === 'clone' ? 'Clone' : 'Save Remote';
   }
 };
-$('#git-msg').onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !composing(e)) { e.preventDefault(); gitCommit(false); } };
-$('#git-commit').onclick = () => gitCommit(false);
-$('#git-commit-push').onclick = () => gitCommit(true);
-$('#git-init-btn').onclick = () => gitOp('/git/init', {}, 'Initialized Git repository.');
+$('#git-msg').onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !composing(e)) { e.preventDefault(); gitCommit(); } };
+$('#git-commit').onclick = () => gitCommit();
+$('#git-commit-export').onclick = async () => { if ($('#git-msg').value.trim()) await gitCommit(); await exportProjectZip(); };
+$('#git-init-btn').onclick = () => gitInitRepo().catch(fail);
 $('#git-clone-btn').onclick = $('#git-empty-clone').onclick = $('#welcome-clone').onclick = () => openGitDialog('clone');
-$('#git-pull-btn').onclick = () => gitOp('/git/pull', {}, 'Pulled from remote.');
-$('#git-push-btn').onclick = () => gitOp('/git/push', {}, 'Pushed to GitHub.');
-$('#git-fetch-btn').onclick = () => gitOp('/git/fetch', {}, 'Fetched remote updates.');
+$('#git-pull-btn').onclick = () => gitPullFromGithub().catch(fail);
+$('#git-export-btn').onclick = () => exportProjectZip().catch(fail);
 $('#git-refresh-btn').onclick = () => refreshGit().catch(fail);
 $('#st-git').onclick = gitBranchPicker;
-$('#st-sync').onclick = () => (gitState?.behind && !gitState?.ahead ? gitOp('/git/pull', {}, 'Pulled from remote.') : gitOp('/git/push', {}, 'Pushed to GitHub.'));
+$('#st-sync').onclick = () => exportProjectZip().catch(fail);
 
-// ---------- agent (ACP over the bridge's stdio pipe; minimal for now) ----------
-let sid = null, acp = null, agentName = '', agentState = 'off', nextId = 1, agentGen = 0, agentCtl = null, agentLineCursor = 0;
-const pending = new Map(), toolEls = new Map();
-let turn = null, curText = null, curThought = null, outEl = null, outN = 0;
-const scrollLog = () => { const l = $('#log'); l.scrollTop = l.scrollHeight; };
-const post = o => api(`/agent/${sid}/send`, { method: 'POST', body: JSON.stringify(o) });
-function rpc(method, params) {
-  const id = nextId++;
-  return new Promise((res, rej) => {
-    pending.set(id, { res, rej });
-    post({ jsonrpc: '2.0', id, method, params }).catch(e => {
-      if (pending.delete(id)) rej(e);
-      fail(e);
-    });
-  });
-}
-
-function chatEmpty() {
+// ---------- privacy mode status for Chat panel (no server process / filesystem access) ----------
+$('#power').disabled = true;
+$('#agent').replaceChildren(new Option('Browser-Local Only', 'local'));
+$('#agent').disabled = true;
+$('#in').disabled = true;
+$('#in').placeholder = 'Browser-Local Privacy Mode: server-side agent execution is disabled.';
+$('#send').disabled = true;
+$('#st-agent').replaceChildren(icon('shield'), el('span', '', 'Isolated'));
+{
   const e = el('div', 'chat-empty'); e.id = 'chat-empty';
-  const b = el('button', 'btn', 'Start agent'); b.onclick = startAgent;
-  e.append(icon('sparkle', 'big'), el('h3', '', 'Chat with a local agent'), el('p', '', 'The agent runs on this machine, inside the open folder.'), b);
+  e.append(icon('shield', 'big'), el('h3', '', 'Zero Server Storage'), el('p', '', 'Workspaces, files, snapshots, and VS Code extensions stay 100% inside this browser profile. Server-side shell/agent execution is disabled to prevent cross-client directory access.'));
   $('#log').replaceChildren(e);
 }
-function msg(kind, name, ic) {
-  $('#chat-empty')?.remove();
-  const m = el('div', 'msg ' + kind), who = el('div', 'who'), av = el('span', 'av'), body = el('div', 'body');
-  av.append(icon(ic)); who.append(av, el('span', '', name)); m.append(who, body);
-  $('#log').append(m); scrollLog();
-  return body;
-}
-function note(text, cls = '') {
-  $('#chat-empty')?.remove();
-  const n = el('div', 'note ' + cls); n.append(icon(cls === 'err' ? 'error' : 'info'), el('span', '', text));
-  $('#log').append(n); scrollLog();
-}
-const turnBody = () => turn ??= msg('agent', agentName, 'sparkle');
-function logLine(t) {
-  if (!outEl) { outEl = el('details', 'out'); outEl.append(el('summary'), el('pre')); $('#log').append(outEl); }
-  outEl.lastChild.textContent += t.endsWith('\n') ? t : t + '\n';
-  outEl.firstChild.textContent = `Agent output (${++outN})`;
-}
-function setAgent(s) {
-  agentState = s;
-  const on = s !== 'off';
-  if (!on) $$('#log .perm-b button').forEach(b => { b.disabled = true; });
-  $('#power').replaceChildren(icon(on ? 'debug-stop' : 'play')); $('#power').title = on ? 'Stop agent' : 'Start agent';
-  $('#agent').disabled = on;
-  $('#in').placeholder = s === 'ready' ? `Ask ${agentName}… (Enter to send, Shift+Enter for newline)` : s === 'working' ? 'Working…' : 'Start an agent to chat';
-  $('#send').replaceChildren(icon(s === 'working' ? 'debug-stop' : 'send')); $('#send').title = s === 'working' ? 'Cancel' : 'Send (Enter)';
-  $('#send').disabled = !(s === 'ready' || s === 'working');
-  const [ic, cls, txt] = { off: ['circle-large-outline', '', 'Agent off'], starting: ['loading', 'spin', agentName + ' · starting'], ready: ['circle-filled', 'ok', agentName], working: ['loading', 'spin', agentName + ' · working'] }[s];
-  $('#st-agent').replaceChildren(icon(ic, cls), el('span', '', txt));
-  $('#cinfo').textContent = on ? `${agentName} · ${base(root)}` : '';
-}
-function update(u) {
-  const k = u.sessionUpdate, t = u.content?.text ?? '';
-  if (k === 'agent_message_chunk') { curThought = null; curText ??= turnBody().appendChild(el('div', 'txt')); curText.textContent += t; return scrollLog(); }
-  if (k === 'agent_thought_chunk') { curText = null; curThought ??= turnBody().appendChild(el('div', 'thought')); curThought.textContent += t; return scrollLog(); }
-  if (k === 'tool_call' || k === 'tool_call_update') {
-    curText = curThought = null;
-    let r = toolEls.get(u.toolCallId);
-    if (!r) { r = turnBody().appendChild(el('div', 'tool')); toolEls.set(u.toolCallId, r); }
-    r.dataset.title = u.title ?? r.dataset.title ?? 'Tool call';
-    const st = u.status ?? r.dataset.status ?? 'pending'; r.dataset.status = st;
-    const [ic, cls] = st === 'completed' ? ['check', 'ok'] : st === 'failed' ? ['error', 'err'] : ['loading', 'spin'];
-    r.replaceChildren(icon(ic, cls), el('span', '', r.dataset.title));
-    scrollLog();
-  }
-}
-function ask(m) {
-  curText = curThought = null;
-  const card = turnBody().appendChild(el('div', 'perm')), row = el('div', 'perm-b');
-  card.append(el('div', '', m.params.toolCall?.title || 'The agent wants to run a tool'), row);
-  let first = true;
-  for (const o of m.params.options) {
-    const primary = first && o.kind?.startsWith('allow'); if (primary) first = false;
-    const b = el('button', primary ? 'btn' : 'btn sec', o.name);
-    b.onclick = () => { row.replaceWith(el('div', 'note', '→ ' + o.name)); post({ jsonrpc: '2.0', id: m.id, result: { outcome: { outcome: 'selected', optionId: o.optionId } } }).catch(fail); };
-    row.append(b);
-  }
-  scrollLog();
-}
-function onMsg(m, from) {
-  if (from !== sid) return; // a stopped session
-  if (m.log) return logLine(m.log);
-  if ('exit' in m) {
-    for (const p of pending.values()) p.rej(new Error('agent exited'));
-    pending.clear(); toolEls.clear(); sid = acp = null; setAgent('off');
-    return note(`Agent exited (code ${m.exit}).`, m.exit ? 'err' : '');
-  }
-  if (m.id !== undefined && !m.method) {
-    const p = pending.get(m.id); pending.delete(m.id);
-    return m.error ? p?.rej(new Error(m.error.message)) : p?.res(m.result);
-  }
-  if (m.method === 'session/update') return update(m.params.update);
-  if (m.method === 'session/request_permission') return ask(m);
-  if (m.id !== undefined) post({ jsonrpc: '2.0', id: m.id, error: { code: -32601, message: 'not supported by this client' } }).catch(() => {});
-}
-async function pump(id, from = 0) { // fetch-based SSE so the token can travel in a header
-  agentCtl?.abort();
-  const ctl = agentCtl = new AbortController();
-  const rd = (await api(`/agent/${id}/stream?from=${from}`, { signal: ctl.signal })).body.getReader(), dec = new TextDecoder();
-  let buf = '';
-  for (;;) {
-    const { value, done } = await rd.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    let i;
-    while ((i = buf.indexOf('\n\n')) >= 0) {
-      const lines = buf.slice(0, i).split('\n'); buf = buf.slice(i + 2);
-      const idL = lines.find(l => l.startsWith('id: '));
-      if (idL) agentLineCursor = Math.max(agentLineCursor, +idL.slice(4) + 1);
-      const d = lines.find(l => l.startsWith('data: '));
-      if (d) onMsg(JSON.parse(d.slice(6)), id);
-    }
-  }
-}
-async function startAgent() {
-  if (!root) return toast('Open a folder first.', 'warn');
-  agentName = $('#agent').value;
-  if (!agentName) return toast('No agents configured.', 'warn');
-  await stopAgent(true);
-  const gen = ++agentGen;
-  outEl = null; outN = 0; turn = null; toolEls.clear();
-  note(`Starting ${agentName}…`); setAgent('starting');
-  try {
-    const newSid = (await (await postJSON('/agent/start', { id: agentName })).json()).sid;
-    if (gen !== agentGen) { api('/agent/' + newSid, { method: 'DELETE' }).catch(() => {}); return; }
-    sid = newSid; agentLineCursor = 0;
-    pump(sid, 0).catch(() => {});
-    await rpc('initialize', { protocolVersion: 1, clientCapabilities: {} });
-    if (gen !== agentGen) return;
-    const res = await rpc('session/new', { cwd: root, mcpServers: [] });
-    if (gen !== agentGen) return;
-    acp = res.sessionId;
-    setAgent('ready'); note(`${agentName} is ready in ${root}`);
-  } catch (e) {
-    if (gen !== agentGen) return;
-    note(e.message, 'err');
-    await stopAgent(true);
-  }
-}
-async function stopAgent(silent) {
-  const wasOn = agentState !== 'off' || sid;
-  agentGen++;
-  agentCtl?.abort(); agentCtl = null; agentLineCursor = 0;
-  const s = sid; sid = acp = null;
-  const err = Object.assign(new Error('Agent stopped'), { stopped: true });
-  for (const p of pending.values()) p.rej(err);
-  pending.clear(); toolEls.clear();
-  if (wasOn) setAgent('off');
-  if (s) await api('/agent/' + s, { method: 'DELETE' }).catch(() => {});
-  if (!silent && wasOn) note('Agent stopped.');
-}
-async function sendPrompt() {
-  if (agentState === 'working') return post({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: acp } }).catch(fail);
-  const text = $('#in').value.trim();
-  if (!text || agentState !== 'ready') return;
-  $('#in').value = ''; autosize();
-  turn = null; toolEls.clear(); msg('user', 'You', 'account').textContent = text;
-  turn = curText = curThought = null; setAgent('working');
-  try { const r = await rpc('session/prompt', { sessionId: acp, prompt: [{ type: 'text', text }] }); if (r.stopReason !== 'end_turn') note('Stopped: ' + r.stopReason); }
-  catch (e) { if (!e.stopped) note(e.message, 'err'); }
-  if (acp) setAgent('ready');
-  turn = curText = curThought = null;
-  await renderTree().catch(() => {}); await reloadClean();
-}
-const autosize = () => { const t = $('#in'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 200) + 'px'; };
-$('#in').oninput = autosize;
-$('#in').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !composing(e)) { e.preventDefault(); if (agentState === 'ready') sendPrompt(); } };
-$('#send').onclick = sendPrompt;
-$('#power').onclick = () => (agentState === 'off' ? startAgent() : stopAgent(false));
-setAgent('off');
-chatEmpty();
 
 // ---------- VS Code Marketplace & Extension Host ----------
 let installedExts = [], marketExts = [], extSearchSeq = 0, extSearchTimer = null, marketLoaded = false;
@@ -3029,7 +3325,7 @@ function createVscodeApi(ext, disposables, cmdMap) {
         return true;
       },
       fs: {
-        readFile: async u => new TextEncoder().encode(await (await api('/fs/file?path=' + enc(u.path || ''))).text()),
+        readFile: async u => vfsReadBytes(activeProj(), String(u?.path || '').replace(/^\/+/, '')),
       },
     },
     languages: {
@@ -3090,10 +3386,116 @@ function loadScriptOnce(url) {
   return new Promise((resolve, reject) => {
     const s = document.createElement('script');
     s.src = url; s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error('Failed to load ' + url));
+    s.onload = () => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); resolve(); };
+    s.onerror = () => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); reject(new Error('Failed to load script')); };
     document.head.append(s);
   });
+}
+
+function parseJsonc(str) {
+  try { return JSON.parse(str); } catch {}
+  let out = '', inStr = false, esc = false, lineC = false, blkC = false;
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i], n = str[i + 1];
+    if (lineC) { if (c === '\n') { lineC = false; out += c; } continue; }
+    if (blkC) { if (c === '*' && n === '/') { blkC = false; i++; } continue; }
+    if (inStr) { out += c; if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') { inStr = true; out += c; continue; }
+    if (c === '/' && n === '/') { lineC = true; i++; continue; }
+    if (c === '/' && n === '*') { blkC = true; i++; continue; }
+    out += c;
+  }
+  out = out.replace(/,\s*([}\]])/g, '$1');
+  return JSON.parse(out);
+}
+function vsixResolve(baseRel, relPath) {
+  const parts = (baseRel ? baseRel.split('/') : []).concat(String(relPath || '').replace(/\\/g, '/').split('/'));
+  const stack = [];
+  for (const s of parts) {
+    if (!s || s === '.') continue;
+    if (s === '..') stack.pop(); else stack.push(s);
+  }
+  return stack.join('/');
+}
+function bytesToDataUrl(u8, name = '') {
+  const ext = name.split('.').pop().toLowerCase();
+  const mime = ext === 'svg' ? 'image/svg+xml' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+  let bin = '';
+  for (let i = 0; i < u8.length; i += 8192) bin += String.fromCharCode(...u8.subarray(i, i + 8192));
+  return `data:${mime};base64,${btoa(bin)}`;
+}
+async function unzipVsixToManifest(buf, fallbackMeta = {}) {
+  const files = await unzipBytes(buf, { maxBytes: 120 * 1024 * 1024, maxFiles: 5000 });
+  const prefix = files.has('extension/package.json') ? 'extension' : files.has('package.json') ? '' : null;
+  if (prefix === null) throw new Error('Invalid VSIX: missing package.json');
+  const getRel = r => (prefix ? `${prefix}/${r.replace(/^\/+/, '')}` : r.replace(/^\/+/, ''));
+  const readTxt = r => {
+    const u8 = files.get(getRel(r));
+    return u8 ? textDec.decode(u8) : '';
+  };
+  const readJson = r => { try { const t = readTxt(r); return t ? parseJsonc(t) : null; } catch { return null; } };
+  const pkg = readJson('package.json');
+  if (!pkg) throw new Error('Invalid VSIX: malformed package.json');
+  const nls = readJson('package.nls.json') || {};
+  const tr = s => (typeof s === 'string' && s.startsWith('%') && s.endsWith('%') ? (nls[s.slice(1, -1)] ?? s) : s);
+  const fullId = `${pkg.publisher || fallbackMeta.publisher || 'local'}.${pkg.name || 'ext'}`;
+  const dir = (fallbackMeta.id || fullId).toLowerCase();
+
+  const loadTheme = (rel, seen = new Set()) => {
+    const clean = rel.replace(/^\.?\//, '');
+    if (seen.has(clean)) return null;
+    seen.add(clean);
+    const data = readJson(clean);
+    if (!data || typeof data !== 'object') return null;
+    let colors = {}, tokenColors = [];
+    if (typeof data.include === 'string') {
+      const baseRel = clean.split('/').slice(0, -1).join('/');
+      const parent = loadTheme(vsixResolve(baseRel, data.include), seen);
+      if (parent) { colors = { ...parent.colors }; tokenColors = [...parent.tokenColors]; }
+    }
+    if (data.colors && typeof data.colors === 'object') colors = { ...colors, ...data.colors };
+    if (Array.isArray(data.tokenColors)) tokenColors = [...tokenColors, ...data.tokenColors];
+    return { type: data.type || '', colors, tokenColors };
+  };
+
+  const contribs = pkg.contributes || {};
+  const themes = (contribs.themes || []).map(t => {
+    const th = t.path ? loadTheme(t.path) : null;
+    return th ? { id: t.id || tr(t.label), label: tr(t.label || 'Theme'), uiTheme: t.uiTheme || 'vs-dark', colors: th.colors, tokenColors: th.tokenColors } : null;
+  }).filter(Boolean);
+  const languages = (contribs.languages || []).map(l => ({
+    id: l.id, extensions: l.extensions || [], aliases: l.aliases || [], filenames: l.filenames || [], mimetypes: l.mimetypes || [],
+    configuration: l.configuration ? readJson(l.configuration.replace(/^\.?\//, '')) : null,
+  }));
+  const grammars = (contribs.grammars || []).map(g => {
+    const data = g.path ? readJson(g.path.replace(/^\.?\//, '')) : null;
+    return data && g.language ? { language: g.language, scopeName: g.scopeName, grammar: data } : null;
+  }).filter(Boolean);
+  const snippets = (contribs.snippets || []).map(s => {
+    const data = s.path ? readJson(s.path.replace(/^\.?\//, '')) : null;
+    return data && s.language ? { language: s.language, snippets: data } : null;
+  }).filter(Boolean);
+  const commands = (contribs.commands || []).map(c => ({ command: c.command, title: tr(c.title || c.command), category: tr(c.category || '') }));
+
+  let iconUrl = fallbackMeta.iconUrl || '';
+  if (pkg.icon) {
+    const ic = files.get(getRel(pkg.icon));
+    if (ic) iconUrl = bytesToDataUrl(ic, pkg.icon);
+  }
+  const browserCode = pkg.browser ? readTxt(pkg.browser.replace(/^\.?\//, '')) : '';
+  return {
+    id: fullId, dir,
+    displayName: tr(pkg.displayName || fallbackMeta.displayName || pkg.name || fullId),
+    description: tr(pkg.description || fallbackMeta.description || ''),
+    version: pkg.version || fallbackMeta.version || '0.0.0',
+    publisher: pkg.publisher || fallbackMeta.publisher || '',
+    installs: fallbackMeta.installs || 0,
+    enabled: true,
+    iconUrl,
+    hasBrowser: !!browserCode,
+    browserCode,
+    themes, languages, grammars, snippets, commands,
+  };
 }
 
 async function activateExtension(ext) {
@@ -3102,9 +3504,13 @@ async function activateExtension(ext) {
   const disposables = [], cmdMap = new Map();
   registerLangContributions(ext, disposables);
   let exps = {};
-  if (ext.hasBrowser) {
+  if (ext.hasBrowser && ext.browserCode) {
     try {
-      if (!extFactories.has(ext.dir)) await loadScriptOnce(`/ext/${enc(ext.dir)}/bundle.js`);
+      if (!extFactories.has(ext.dir)) {
+        const wrapped = `window.__webideExtDefine(${JSON.stringify(ext.dir)}, function(require, module, exports, define) {\n${ext.browserCode}\n});`;
+        const blobUrl = URL.createObjectURL(new Blob([wrapped], { type: 'text/javascript' }));
+        await loadScriptOnce(blobUrl);
+      }
       const factory = extFactories.get(ext.dir);
       if (factory) {
         const vsApi = createVscodeApi(ext, disposables, cmdMap);
@@ -3166,7 +3572,7 @@ function getExtCommands() {
 async function loadExtensions() {
   if (!editor) return;
   if (!extBuiltins.size) extBuiltins = new Set(monaco.languages.getLanguages().map(l => l.id));
-  installedExts = await getJSON('/ext/installed').catch(() => []);
+  installedExts = await dbAll('extensions').catch(() => []);
   for (const ext of installedExts) {
     if (ext.enabled) await activateExtension(ext);
     else deactivateExtension(ext.dir);
@@ -3269,7 +3675,7 @@ async function searchMarketplace(q = '') {
   $('#ext-msg').hidden = false;
   $('#ext-msg').textContent = q ? `Searching Marketplace for "${q}"…` : 'Loading VS Code Marketplace…';
   try {
-    const res = await getJSON('/ext/search?q=' + enc(q));
+    const res = await getJSON('/proxy/ext/search?q=' + enc(q));
     if (seq !== extSearchSeq) return;
     marketExts = res;
     marketLoaded = true;
@@ -3287,11 +3693,15 @@ async function searchMarketplace(q = '') {
 async function installExtFromUI(item, btn) {
   if (btn) { btn.disabled = true; btn.replaceChildren(icon('loading', 'spin'), el('span', '', 'Installing…')); }
   try {
-    const manifest = await (await postJSON('/ext/install', { id: item.id, vsixUrl: item.vsixUrl })).json();
-    installedExts = await getJSON('/ext/installed');
-    const live = installedExts.find(e => e.id.toLowerCase() === manifest.id.toLowerCase()) || manifest;
+    const vsixUrl = item.vsixUrl;
+    if (!vsixUrl) throw new Error('Extension VSIX URL not available');
+    const r = await api('/proxy/ext/vsix?url=' + enc(vsixUrl));
+    const manifest = await unzipVsixToManifest(await r.arrayBuffer(), item);
+    await dbPut('extensions', manifest);
+    installedExts = await dbAll('extensions');
+    const live = installedExts.find(e => e.dir === manifest.dir) || manifest;
     await activateExtension(live);
-    let msg = `Installed ${live.displayName} v${live.version}.`;
+    let msg = `Installed ${live.displayName} v${live.version} in browser IndexedDB.`;
     if (live.themes?.length) {
       applyThemeByKey(`${live.dir}::${live.themes[0].label}`, true);
       msg += ` Applied theme "${live.themes[0].label}".`;
@@ -3307,8 +3717,9 @@ async function installExtFromUI(item, btn) {
 async function toggleExtFromUI(inst) {
   try {
     const next = !inst.enabled;
-    await postJSON('/ext/toggle', { id: inst.dir, enabled: next });
-    installedExts = await getJSON('/ext/installed');
+    const rec = await dbGet('extensions', inst.dir);
+    if (rec) { rec.enabled = next; await dbPut('extensions', rec); }
+    installedExts = await dbAll('extensions');
     const live = installedExts.find(e => e.dir === inst.dir);
     if (next && live) await activateExtension(live);
     else deactivateExtension(inst.dir);
@@ -3319,8 +3730,8 @@ async function toggleExtFromUI(inst) {
 async function uninstallExtFromUI(inst) {
   try {
     deactivateExtension(inst.dir);
-    await postJSON('/ext/uninstall', { id: inst.dir });
-    installedExts = await getJSON('/ext/installed');
+    await dbDel('extensions', inst.dir);
+    installedExts = await dbAll('extensions');
     toast(`Uninstalled ${inst.displayName}.`);
     renderExtensions();
   } catch (e) { fail(e); }
@@ -3378,7 +3789,7 @@ lightDismiss($('#extdlg'), closeExtDialog);
 
 function openExtView() {
   showView('ext');
-  getJSON('/ext/installed').then(list => { installedExts = list; renderExtensions(); }).catch(() => {});
+  dbAll('extensions').then(list => { installedExts = list; renderExtensions(); }).catch(() => {});
   if (!marketLoaded) searchMarketplace($('#ext-q').value.trim());
   $('#ext-q').focus();
 }
@@ -3391,7 +3802,7 @@ $('#ext-q').oninput = () => {
 };
 $('#ext-q').onkeydown = e => { if (e.key === 'Enter' && !composing(e)) { clearTimeout(extSearchTimer); searchMarketplace($('#ext-q').value.trim()); } };
 $('#ext-clear').onclick = () => { $('#ext-q').value = ''; $('#ext-clear').hidden = true; searchMarketplace(''); $('#ext-q').focus(); };
-$('#ext-refresh').onclick = () => { getJSON('/ext/installed').then(list => { installedExts = list; }).catch(() => {}); searchMarketplace($('#ext-q').value.trim()); };
+$('#ext-refresh').onclick = () => { dbAll('extensions').then(list => { installedExts = list; }).catch(() => {}); searchMarketplace($('#ext-q').value.trim()); };
 $('#ext-themes').onclick = () => quickOpen('', 'theme');
 
 // ---------- boot ----------
@@ -3411,7 +3822,6 @@ require(['vs/editor/editor.main'], async () => {
   $('#loading').remove();
   try {
     await loadExtensions().catch(e => console.warn('Extensions init:', e));
-    $('#agent').replaceChildren(...(await getJSON('/agents')).map(a => new Option(a, a)));
     await loadRoot();
   } catch (e) { fail(e); }
 }, err => { $('#loading').textContent = 'Could not load the editor (Monaco from cdnjs): ' + err.message; });
