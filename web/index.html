@@ -1,0 +1,3420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebIDE</title>
+<style>
+  /* OpenIDE Obsidian & Edge-Glow palette (inspired by openide.in) */
+  :root {
+    --bg:#060608; --side:#0d0d12; --card:#111118; --border:#ffffff14; --fg:#d4d4e0; --strong:#ffffff; --dim:#9494a8; --faint:#5c5c70;
+    --accent:#6366f1; --accent-h:#4f46e5; --grad:linear-gradient(135deg, #8b5cf6 0%, #3b82f6 55%, #06b6d4 100%);
+    --hover:#ffffff0b; --sel:#ffffff12; --sel-focus:#6366f12b;
+    --input:#12121a; --input-border:#ffffff1c; --widget:#111118; --widget-border:#ffffff1f;
+    --err:#f87171; --ok:#34d399; --warn:#fbbf24; --link:#38bdf8;
+    --mono: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+    color-scheme: dark; /* native controls + scrollbars dark too (Windows defaults to light, chunky ones) */
+  }
+  * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #ffffff24 transparent; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; overflow: hidden; background: var(--bg); color: var(--fg); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+  .sp { flex: 1; }
+  .codicon { font-size: 16px; line-height: 1; }
+  .ok { color: var(--ok); } .err { color: var(--err); } .warn { color: var(--warn); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin 1.2s linear infinite; }
+
+  /* buttons */
+  .btn { height: 26px; padding: 0 12px; border: 1px solid transparent; border-radius: 6px; background: var(--grad); color: #fff; font-weight: 500; white-space: nowrap; box-shadow: 0 2px 10px #6366f138; transition: filter .15s, transform .15s; }
+  .btn:hover { filter: brightness(1.08); }
+  .btn.sec { background: #ffffff0a; color: var(--fg); border-color: var(--input-border); box-shadow: none; }
+  .btn.sec:hover { background: #ffffff14; border-color: #ffffff2e; filter: none; }
+  .btn.wide { width: 100%; }
+  .ibtn { width: 22px; height: 22px; padding: 0; display: inline-grid; place-items: center; flex: none; border: 0; border-radius: 5px; background: none; color: var(--fg); }
+  .ibtn:hover { background: #ffffff14; }
+  .ibtn:disabled { opacity: .4; cursor: default; background: none; }
+  kbd { font: 11px var(--mono); padding: 2px 6px; border: 1px solid var(--input-border); border-bottom-width: 2px; border-radius: 5px; background: var(--card); color: var(--fg); }
+
+  /* layout: activity | side | sash | main | sash | chat + bottom project taskbar & status */
+  #app { display: grid; height: 100%; grid-template-rows: minmax(0, 1fr) auto 22px; grid-template-columns: 48px 260px 0 minmax(0, 1fr) 0 380px; }
+  #activity { grid-area: 1 / 1; background: var(--side); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; }
+  #side { grid-area: 1 / 2; } #sash-side { grid-area: 1 / 3; } #main { grid-area: 1 / 4; } #sash-chat { grid-area: 1 / 5; } #chat { grid-area: 1 / 6; }
+  #ws-bar { grid-area: 2 / 1 / 3 / -1; }
+  #status { grid-area: 3 / 1 / 4 / -1; }
+
+  /* project taskbar (stacked open projects; inactive projects hibernate) */
+  #ws-bar { height: 34px; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: var(--side); border-top: 1px solid var(--border); user-select: none; overflow: hidden; }
+  #ws-tasks { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; overflow-x: auto; scrollbar-width: none; }
+  .ws-task { height: 24px; max-width: 220px; padding: 0 6px 0 10px; display: inline-flex; align-items: center; gap: 6px; flex: none; border-radius: 7px; border: 1px solid var(--border); background: #ffffff05; color: var(--dim); font-size: 12px; cursor: pointer; transition: border-color .15s, background .15s, color .15s; }
+  .ws-task:hover { background: #ffffff0e; color: var(--fg); border-color: #ffffff24; }
+  .ws-task.on { background: #141422; border-color: #6366f177; color: var(--strong); box-shadow: inset 0 1px 0 #8b5cf644; }
+  .ws-task .ws-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--faint); }
+  .ws-task.on .ws-dot { background: #34d399; box-shadow: 0 0 8px #34d399aa; }
+  .ws-task .ws-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-task .ws-sleep { font-size: 10px; color: var(--faint); padding: 1px 5px; border-radius: 4px; background: #ffffff08; flex: none; }
+  .ws-task .ws-dirty { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); flex: none; }
+  .ws-task .ws-x { width: 16px; height: 16px; padding: 0; display: inline-grid; place-items: center; border: 0; border-radius: 4px; background: none; color: var(--dim); opacity: .65; flex: none; }
+  .ws-task .ws-x:hover { opacity: 1; background: #ffffff1a; color: var(--strong); }
+  .ws-task .ws-x .codicon { font-size: 12px; }
+  #ws-bar-acts { display: flex; align-items: center; gap: 4px; flex: none; }
+  .ws-add { height: 24px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--border); background: #ffffff06; color: var(--dim); font-size: 11.5px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .ws-add:hover { background: #ffffff12; color: var(--fg); border-color: #ffffff26; }
+  .ws-add .codicon { font-size: 13px; }
+  .act { width: 48px; height: 48px; display: grid; place-items: center; border: 0; background: none; color: var(--faint); position: relative; transition: color .15s; }
+  .act .codicon { font-size: 24px; }
+  .act:hover, .act.on { color: var(--strong); }
+  .act.on::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: 2px; background: linear-gradient(180deg, #8b5cf6, #06b6d4); }
+  #act-home { width: 48px; height: 46px; display: grid; place-items: center; border: 0; border-bottom: 1px solid var(--border); background: none; position: relative; flex: none; }
+  #act-home .brand-mark { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--grad); color: #fff; box-shadow: 0 2px 12px #6366f155; transition: transform .15s, box-shadow .15s; }
+  #act-home:hover .brand-mark, #act-home.on .brand-mark { transform: translateY(-1px); box-shadow: 0 4px 18px #38bdf877; }
+  #act-home.on::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: 2px; background: linear-gradient(180deg, #8b5cf6, #06b6d4); }
+  .sash { position: relative; z-index: 5; }
+  .sash::after { content: ''; position: absolute; top: 0; bottom: 0; left: -3px; width: 6px; cursor: col-resize; transition: background .1s .25s; }
+  .sash:hover::after, .sash.drag::after { background: var(--accent); }
+
+  /* panels */
+  #side, #chat { background: var(--side); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+  #side { border-right: 1px solid var(--border); }
+  #chat { border-left: 1px solid var(--border); }
+  .ptitle { height: 35px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 16px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); white-space: nowrap; }
+  .ptitle > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+  .ptitle .codicon { font-size: 16px; }
+  #view-git .ptitle { gap: 2px; padding: 0 6px 0 14px; letter-spacing: .03em; }
+  #view-git .ptitle .ibtn { width: 20px; height: 20px; }
+
+  /* explorer */
+  .section { height: 22px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 8px 0 2px; font-size: 11px; font-weight: 700; text-transform: uppercase; cursor: pointer; user-select: none; }
+  .section .actions { display: flex; gap: 2px; margin-left: auto; opacity: 0; }
+  #side:hover .section .actions, .section:focus-within .actions { opacity: 1; }
+  #ws { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  #tree { flex: 1; overflow: auto; margin: 0; padding: 0 0 12px; list-style: none; outline: none; }
+  #tree ul { list-style: none; margin: 0; padding: 0; }
+  .row { height: 22px; display: flex; align-items: center; gap: 4px; padding-right: 8px; cursor: pointer; white-space: nowrap; user-select: none; border: 1px solid transparent; }
+  .row:hover { background: var(--hover); }
+  .row.sel { background: var(--sel); }
+  #tree:focus .row.sel, #tree:focus-within .row.sel { background: var(--sel-focus); border-color: var(--accent); }
+  .row .tw { width: 16px; flex: none; text-align: center; }
+  .row .name { overflow: hidden; text-overflow: ellipsis; }
+  .row input { flex: 1; min-width: 0; height: 20px; background: var(--input); border: 1px solid var(--accent); outline: none; padding: 0 4px; }
+  .row.bad input { border-color: var(--err); }
+  .view { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+  /* drag & drop */
+  #tree li.drop, #tree.drop { background: #383b3d; }
+  .tab.drop-before { box-shadow: inset 2px 0 var(--accent); }
+  .tab.drop-after { box-shadow: inset -2px 0 var(--accent); }
+  /* search view */
+  .sr-box { padding: 0 12px 6px 20px; flex: none; }
+  .sr-input { display: flex; align-items: center; gap: 1px; background: var(--input); border: 1px solid var(--input-border); border-radius: 2px; }
+  .sr-input:focus-within { border-color: var(--accent); }
+  .sr-input input { flex: 1; min-width: 0; height: 24px; border: 0; background: none; outline: none; padding: 0 6px; }
+  .tgl { width: 20px; height: 20px; padding: 0; margin-right: 2px; display: grid; place-items: center; flex: none; border: 1px solid transparent; border-radius: 3px; background: none; color: var(--fg); }
+  .tgl:hover { background: #ffffff1a; }
+  .tgl.on { background: #2489db52; border-color: #2488db; }
+  .sr-msg { padding: 2px 20px 6px; color: var(--dim); font-size: 12px; flex: none; }
+  .sr-res { flex: 1; overflow: auto; outline: none; padding-bottom: 12px; }
+  .sr-file { padding-left: 8px; }
+  .sr-file .qdesc { margin-left: 2px; color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+  .badge { margin-left: auto; min-width: 18px; padding: 0 5px; border-radius: 11px; background: #616161; color: #fff; font-size: 11px; line-height: 16px; text-align: center; flex: none; }
+  .sr-match { padding-left: 38px; }
+  .sr-match .pv { overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+  .sr-match mark { background: #ea5c0055; color: inherit; border-radius: 2px; }
+  .sr-res .row.sel { background: var(--sel); }
+  .sr-res:focus-within .row.sel { background: var(--sel-focus); border-color: var(--accent); }
+  .welcome { padding: 12px 20px; color: var(--fg); }
+  .welcome p { margin: 0 0 12px; }
+  .welcome .faint { color: var(--dim); font-size: 12px; }
+
+  /* source control (git / GitHub bridge) */
+  .act .act-badge { position: absolute; right: 6px; bottom: 8px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; pointer-events: none; }
+  .git-remote { display: flex; align-items: center; gap: 6px; margin: 0 12px 8px 20px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; background: #ffffff06; font-size: 12px; min-width: 0; }
+  .git-remote a { color: var(--link); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .git-remote a:hover { text-decoration: underline; }
+  .git-box { padding: 0 12px 8px 20px; display: grid; gap: 6px; flex: none; }
+  .git-box textarea { width: 100%; resize: vertical; min-height: 52px; max-height: 140px; padding: 6px 8px; background: var(--input); border: 1px solid var(--input-border); border-radius: 4px; outline: none; }
+  .git-box textarea:focus { border-color: var(--accent); }
+  .git-btns { display: flex; gap: 6px; }
+  .git-btns .btn { flex: 1; }
+  .git-list { flex: 1; overflow: auto; padding-bottom: 12px; }
+  .git-sec { padding-left: 4px; }
+  .git-sec .actions { display: flex; gap: 2px; margin-left: auto; opacity: 0; }
+  .git-sec:hover .actions, .git-sec:focus-within .actions { opacity: 1; }
+  .git-row { padding-left: 20px; gap: 6px; }
+  .git-row .qdesc { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+  .git-row .actions { display: none; gap: 2px; margin-left: auto; }
+  .git-row:hover .actions { display: flex; }
+  .git-st { margin-left: auto; font: 700 11px var(--mono); width: 16px; text-align: center; flex: none; }
+  .git-row:hover .git-st { margin-left: 2px; }
+  .git-st.M, .git-st.R, .git-st.C { color: var(--warn); }
+  .git-st.A, .git-st.U { color: var(--ok); }
+  .git-st.D, .git-st.\! { color: var(--err); }
+  .git-commit { height: auto; min-height: 24px; padding: 4px 10px 4px 20px; align-items: flex-start; gap: 8px; }
+  .git-hash { font: 11px var(--mono); color: var(--link); flex: none; padding-top: 2px; }
+  .git-cinfo { min-width: 0; flex: 1; }
+  .git-cmsg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .git-cmeta { font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #gitdlg .qp-in { display: grid; gap: 8px; padding: 14px; }
+  #gitdlg label { display: grid; gap: 4px; font-size: 12px; color: var(--dim); }
+  #gitdlg .gd-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
+  /* extensions (VS Code Marketplace) */
+  .ext-box { padding: 4px 10px 8px; flex: none; display: grid; gap: 6px; }
+  .ext-input { display: flex; align-items: center; gap: 4px; padding: 0 6px; background: var(--input); border: 1px solid var(--input-border); border-radius: 6px; }
+  .ext-input:focus-within { border-color: var(--accent); }
+  .ext-input input { flex: 1; min-width: 0; border: 0; background: none; outline: none; padding: 4px 2px; font-size: 12px; }
+  .ext-list { flex: 1; min-height: 0; overflow: auto; padding-bottom: 12px; }
+  .ext-sec { padding: 6px 12px 4px; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--dim); display: flex; align-items: center; gap: 6px; border-top: 1px solid #ffffff0a; }
+  .ext-sec:first-child { border-top: 0; }
+  .ext-cnt { font-size: 10px; font-weight: 600; padding: 0 5px; border-radius: 9px; background: #ffffff12; color: var(--fg); }
+  .ext-item { display: flex; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #ffffff08; cursor: pointer; align-items: flex-start; transition: background .12s; }
+  .ext-item:hover { background: var(--hover); }
+  .ext-icon { width: 34px; height: 34px; border-radius: 7px; flex: none; object-fit: contain; background: #ffffff08; padding: 2px; }
+  .ext-icon-ph { width: 34px; height: 34px; border-radius: 7px; flex: none; display: grid; place-items: center; background: linear-gradient(135deg, #6366f128, #06b6d422); border: 1px solid #ffffff14; color: #93c5fd; }
+  .ext-body { flex: 1; min-width: 0; display: grid; gap: 2px; }
+  .ext-top { display: flex; align-items: center; gap: 5px; min-width: 0; }
+  .ext-name { font-weight: 600; color: var(--strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ext-ver { font-size: 10.5px; color: var(--faint); font-family: var(--mono); flex: none; }
+  .ext-desc { font-size: 11.5px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ext-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; color: var(--faint); margin-top: 1px; }
+  .ext-badge { font-size: 10px; padding: 1px 5px; border-radius: 4px; background: #6366f120; color: #a5b4fc; border: 1px solid #6366f138; }
+  .ext-badge.off { background: #ffffff0a; color: var(--dim); border-color: #ffffff14; }
+  .ext-acts { display: flex; align-items: center; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+  .ext-btn { height: 21px; padding: 0 8px; border-radius: 5px; border: 1px solid transparent; font-size: 11px; font-weight: 500; background: var(--grad); color: #fff; display: inline-flex; align-items: center; gap: 4px; }
+  .ext-btn:hover { filter: brightness(1.08); }
+  .ext-btn.sec { background: #ffffff0a; color: var(--fg); border-color: var(--input-border); }
+  .ext-btn.sec:hover { background: #ffffff16; filter: none; }
+  .ext-btn:disabled { opacity: .5; cursor: default; filter: none; }
+  #extdlg { width: min(560px, 92vw); }
+  #extdlg .qp-in { display: grid; gap: 12px; padding: 16px; }
+  .edlg-head { display: flex; gap: 12px; align-items: center; }
+  .edlg-head .ext-icon, .edlg-head .ext-icon-ph { width: 48px; height: 48px; border-radius: 10px; }
+  .edlg-title { font-size: 15px; font-weight: 600; color: var(--strong); }
+  .edlg-sub { font-size: 12px; color: var(--dim); }
+  .edlg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .edlg-chip { height: 24px; padding: 0 9px; border-radius: 6px; border: 1px solid var(--input-border); background: #ffffff08; color: var(--fg); font-size: 11.5px; display: inline-flex; align-items: center; gap: 5px; }
+  .edlg-chip:hover { background: #ffffff14; border-color: var(--accent); }
+  .edlg-chip.on { border-color: var(--accent); background: #6366f128; color: #fff; }
+  .edlg-readme { max-height: 220px; overflow: auto; padding: 10px 12px; border-radius: 8px; background: #09090d; border: 1px solid var(--border); font-size: 12px; line-height: 1.5; white-space: pre-wrap; color: var(--dim); font-family: var(--mono); }
+
+  /* editor group */
+  #main { display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+  #tabs { height: 35px; flex: none; display: flex; background: var(--side); overflow-x: auto; scrollbar-width: none; box-shadow: inset 0 -1px var(--border); }
+  .tab { display: flex; align-items: center; gap: 6px; padding: 0 4px 0 12px; flex: none; border-right: 1px solid var(--border); color: var(--dim); cursor: pointer; position: relative; user-select: none; }
+  .tab:hover { color: var(--fg); }
+  .tab.on { background: var(--bg); color: var(--strong); }
+  .tab.on::before { content: ''; position: absolute; inset: 0 0 auto; height: 2px; background: var(--grad); }
+  .tab.preview .tl { font-style: italic; } /* preview tab: replaced by the next single-click open */
+  .tab .x { visibility: hidden; }
+  .tab:hover .x, .tab.on .x, .tab.dirty .x { visibility: visible; }
+  .tab .x .d { display: none; }
+  .tab.dirty .x .c { display: none; } .tab.dirty .x .d { display: block; }
+  .tab.dirty .x:hover .c { display: block; } .tab.dirty .x:hover .d { display: none; }
+  #crumbs { height: 22px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 12px; color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; }
+  #crumbs .codicon { font-size: 14px; }
+  #edwrap { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+  #diff { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; background: var(--bg); }
+  #diff .dbar { height: 35px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; background: var(--side); box-shadow: inset 0 -1px var(--border); white-space: nowrap; overflow: hidden; }
+  #diff .dt { color: var(--fg); overflow: hidden; text-overflow: ellipsis; min-width: 0; } #diff .dh { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+  #diff .sp { flex: 1; } #diff .btn { height: 24px; padding: 0 10px; flex: none; }
+  #diff .dhost { flex: 1; min-height: 0; }
+  /* bottom panel: terminals */
+  .hsash { position: relative; z-index: 5; height: 0; flex: none; }
+  .hsash::after { content: ''; position: absolute; left: 0; right: 0; top: -3px; height: 6px; cursor: row-resize; transition: background .1s .25s; }
+  .hsash:hover::after, .hsash.drag::after { background: var(--accent); }
+  #panel { flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--side); border-top: 1px solid var(--border); }
+  #panel[hidden] { display: none; }
+  #panel .phead { height: 35px; flex: none; display: flex; align-items: center; gap: 2px; padding: 0 8px 0 20px; user-select: none; }
+  #panel .ptab { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--strong); padding: 4px 0 3px; border-bottom: 1px solid var(--strong); margin-right: 16px; }
+  #terms { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  #terms .tt { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 4px; color: var(--dim); cursor: pointer; font-size: 12px; white-space: nowrap; }
+  #terms .tt:hover { color: var(--fg); } #terms .tt.on { background: #ffffff14; color: var(--fg); }
+  #termbody { flex: 1; min-height: 0; position: relative; }
+  #termbody > div { position: absolute; inset: 0 8px 4px 20px; }
+  #termbody .xterm-viewport { scrollbar-width: thin; }
+  #ed { position: absolute; inset: 0; }
+  #empty { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg); }
+  .wm { text-align: center; color: var(--faint); }
+  .wm .logo { font-size: 120px; opacity: .25; }
+  .wm dl { display: grid; grid-template-columns: auto auto; gap: 10px 16px; margin: 28px 0 0; text-align: left; }
+  .wm dt { text-align: right; } .wm dd { margin: 0; }
+  /* home landing view (openide.in obsidian + grid + edge-glow) */
+  #home { position: absolute; inset: 0; z-index: 6; overflow: auto; background:
+    radial-gradient(640px 320px at 50% 18%, #8b5cf624, transparent 70%),
+    radial-gradient(520px 280px at 32% 28%, #3b82f61c, transparent 70%),
+    radial-gradient(480px 260px at 72% 30%, #06b6d418, transparent 70%),
+    linear-gradient(to right, #ffffff06 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(to bottom, #ffffff06 1px, transparent 1px) 0 0 / 40px 40px,
+    #060608;
+    display: grid; place-items: center; padding: 32px 24px; }
+  .home-in { width: min(560px, 100%); display: grid; gap: 28px; text-align: center; justify-items: center; }
+  .home-hero { display: grid; gap: 10px; }
+  .home-hero h1 { margin: 0; font-size: clamp(32px, 5vw, 46px); line-height: 1.08; letter-spacing: -.035em; font-weight: 800; color: var(--strong); }
+  .home-hero h1 .grad { background: linear-gradient(95deg, #c084fc, #60a5fa 50%, #22d3ee); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .home-slogan { margin: 0; font: 500 14px/1.4 var(--mono); letter-spacing: .24em; color: var(--dim); }
+  .home-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; width: 100%; }
+  .home-btn { min-width: 196px; height: 42px; padding: 0 22px; border-radius: 10px; border: 1px solid #ffffff1c; background: #0d0d12cc; backdrop-filter: blur(10px); color: var(--fg); display: inline-flex; align-items: center; justify-content: center; gap: 10px; font-size: 13.5px; font-weight: 500; transition: border-color .15s, background .15s, transform .15s, box-shadow .15s; }
+  .home-btn:hover { border-color: #ffffff38; background: #14141d; transform: translateY(-1px); }
+  .home-btn.primary { background: var(--grad); border-color: transparent; color: #fff; box-shadow: 0 4px 20px #6366f14d; }
+  .home-btn.primary:hover { filter: brightness(1.08); box-shadow: 0 6px 26px #38bdf859; }
+  .home-btn .codicon[class*='codicon-'] { font-size: 18px; }
+  .home-keys { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 20px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--dim); font-size: 12px; width: 100%; }
+  .home-keys span { display: inline-flex; align-items: center; gap: 6px; }
+  #loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); background: var(--bg); }
+  /* Monaco's codicon rule (.codicon[class*='codicon-'], loaded later) sets a 16px font; re-assert our sizes with higher specificity. */
+  .act .codicon[class*='codicon-'] { font-size: 24px; }
+  .wm .logo[class*='codicon-'] { font-size: 120px; }
+  .chat-empty .big[class*='codicon-'] { font-size: 40px; }
+  .si .codicon[class*='codicon-'], #crumbs .codicon[class*='codicon-'] { font-size: 14px; }
+  .av .codicon[class*='codicon-'] { font-size: 13px; }
+
+  /* chat (agent wiring is minimal for now) */
+  #log { flex: 1; overflow: auto; padding: 12px 16px; }
+  .chat-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--dim); gap: 8px; }
+  .chat-empty .big { font-size: 40px; opacity: .6; }
+  .chat-empty h3 { margin: 4px 0 0; color: var(--fg); font-size: 14px; font-weight: 600; }
+  .chat-empty p { margin: 0 0 8px; max-width: 260px; }
+  .msg { margin: 0 0 16px; }
+  .who { display: flex; align-items: center; gap: 6px; font-weight: 600; margin-bottom: 4px; }
+  .av { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: #ffffff14; }
+  .av .codicon { font-size: 13px; }
+  .body { padding-left: 26px; }
+  .msg.user .body, .txt { white-space: pre-wrap; word-break: break-word; }
+  .thought { white-space: pre-wrap; color: var(--faint); font-style: italic; margin: 2px 0 6px; }
+  .tool { display: flex; gap: 6px; align-items: center; color: var(--dim); font-size: 12px; margin: 4px 0; }
+  .note { display: flex; gap: 6px; align-items: center; color: var(--faint); font-size: 12px; margin: 0 0 10px; }
+  .note.err { color: var(--err); }
+  .perm { margin: 6px 0; border: 1px solid var(--input-border); border-radius: 6px; padding: 10px; background: var(--bg); }
+  .perm-b { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  details.out { margin: 0 0 10px; color: var(--faint); font-size: 12px; }
+  details.out pre { max-height: 200px; overflow: auto; font: 11px var(--mono); white-space: pre-wrap; margin: 6px 0 0; }
+  #composer { margin: 8px 12px 12px; border: 1px solid var(--input-border); border-radius: 10px; background: var(--input); flex: none; transition: border-color .15s, box-shadow .15s; }
+  #composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px #6366f124; }
+  #in { display: block; width: 100%; border: 0; background: none; resize: none; outline: none; padding: 8px 10px 2px; max-height: 200px; }
+  .cfoot { display: flex; align-items: center; justify-content: space-between; padding: 2px 6px 6px 10px; color: var(--faint); font-size: 12px; }
+  select { height: 24px; max-width: 140px; background: var(--input); border: 1px solid var(--input-border); border-radius: 6px; padding: 0 6px; text-transform: none; letter-spacing: 0; }
+
+  /* status bar */
+  #status, #activity, .ptitle, #crumbs, .qp-foot { user-select: none; }
+  #status { display: flex; align-items: stretch; background: var(--side); border-top: 1px solid var(--border); color: var(--dim); font-size: 12px; overflow: hidden; }
+  .si { display: flex; align-items: center; gap: 4px; padding: 0 8px; border: 0; background: none; color: inherit; white-space: nowrap; }
+  button.si:hover { background: #ffffff14; color: var(--fg); }
+  .si .codicon { font-size: 14px; }
+  .si.remote { background: var(--grad); color: #fff; padding: 0 10px; font-weight: 500; }
+
+  /* quick input: folder picker, Go to File, Command Palette */
+  dialog.quick { margin: 8vh auto 0; padding: 0; width: min(620px, calc(100vw - 32px)); background: var(--widget); backdrop-filter: blur(16px); color: var(--fg); border: 1px solid var(--widget-border); border-radius: 12px; box-shadow: 0 18px 48px #00000099; }
+  dialog.quick::backdrop, #modal::backdrop { background: #00000059; backdrop-filter: blur(2px); }
+  .qp-in { padding: 8px; }
+  .qp-title { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 2px 0 6px; color: var(--dim); font-size: 12px; }
+  .quick input { width: 100%; height: 30px; background: var(--input); border: 1px solid var(--input-border); outline: none; border-radius: 6px; padding: 0 10px; }
+  .quick input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px #6366f124; }
+  .qp-msg { padding: 8px 10px 2px; color: var(--dim); }
+  .qp-msg.err { color: var(--err); }
+  .qlist { max-height: min(440px, 50vh); overflow: auto; margin-top: 6px; }
+  .qi { height: 26px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+  .qi:hover { background: var(--hover); }
+  .qi.on { background: var(--sel-focus); color: var(--strong); outline: 1px solid var(--accent); outline-offset: -1px; }
+  .qi mark { background: none; color: var(--link); font-weight: 600; }
+  .qi .qd { color: var(--dim); font-size: 12px; margin-left: auto; }
+  .qi .qdesc { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+  .qi .qk { margin-left: auto; display: flex; gap: 3px; }
+  .qsep { padding: 6px 10px 2px; font-size: 11px; color: var(--dim); }
+
+  /* context menu */
+  #menu { position: fixed; z-index: 70; min-width: 220px; padding: 4px; background: #111118f2; backdrop-filter: blur(16px); border: 1px solid var(--widget-border); border-radius: 10px; box-shadow: 0 12px 32px #00000099; }
+  .mi { width: 100%; height: 26px; display: flex; align-items: center; gap: 24px; padding: 0 10px 0 24px; border: 0; border-radius: 6px; background: none; color: var(--fg); text-align: left; white-space: nowrap; }
+  .mi:hover:not(:disabled), .mi:focus { background: var(--accent); color: #fff; outline: none; }
+  .mi:disabled { color: var(--faint); cursor: default; }
+  .mi .mk { margin-left: auto; color: inherit; opacity: .75; font-size: 12px; }
+  .ms { height: 1px; margin: 4px 0; background: var(--widget-border); }
+
+  /* modal dialog (unsaved changes, delete) */
+  #modal { padding: 0; width: min(440px, calc(100vw - 32px)); background: #111118f2; backdrop-filter: blur(16px); color: var(--fg); border: 1px solid var(--widget-border); border-radius: 12px; box-shadow: 0 18px 48px #00000099; }
+  .md-body { display: flex; gap: 14px; padding: 20px 20px 4px; }
+  .md-body .codicon[class*='codicon-'] { font-size: 32px; color: var(--warn); }
+  #md-title { margin: 2px 0 8px; font-weight: 600; line-height: 1.4; word-break: break-word; }
+  #md-detail { margin: 0 0 8px; color: var(--dim); }
+  #md-buttons { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px 16px; }
+  .qp-foot { display: flex; align-items: center; gap: 12px; padding: 8px 4px 2px; color: var(--faint); font-size: 12px; border-top: 1px solid var(--border); margin-top: 6px; }
+  .qp-foot .keys { display: flex; gap: 12px; flex-wrap: wrap; }
+
+  /* toasts */
+  #toasts { position: fixed; right: 12px; bottom: 34px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
+  .toast { display: flex; gap: 8px; align-items: center; max-width: 420px; padding: 10px 12px; background: #111118f2; backdrop-filter: blur(16px); border: 1px solid var(--widget-border); border-radius: 10px; box-shadow: 0 10px 30px #00000080; }
+
+  @media (max-width: 700px) { #activity, .sash { display: none; } #app { grid-template-columns: 0 0 0 minmax(0, 1fr) 0 0 !important; } #side, #chat { display: none; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <nav id="activity">
+    <button id="act-home" title="WebIDE Home — Open · Private · Light" aria-label="WebIDE Home">
+      <span class="brand-mark" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 7-5 5 5 5"/><path d="m16 7 5 5-5 5"/><path d="m13.5 5-3 14"/></svg>
+      </span>
+    </button>
+    <button class="act" id="act-files" title="Explorer"><span class="codicon codicon-files"></span></button>
+    <button class="act" id="act-search" title="Search"><span class="codicon codicon-search"></span></button>
+    <button class="act" id="act-git" title="Source Control (Git / GitHub)"><span class="codicon codicon-source-control"></span><span class="act-badge" id="git-badge" hidden></span></button>
+    <button class="act" id="act-ext" title="Extensions (VS Code Marketplace)"><span class="codicon codicon-extensions"></span></button>
+    <button class="act" id="act-chat" title="Chat"><span class="codicon codicon-comment-discussion"></span></button>
+  </nav>
+
+  <aside id="side">
+   <div id="view-explorer" class="view">
+    <div class="ptitle"><span>Explorer</span><span class="sp"></span><button class="ibtn" id="open-folder" title="Open Folder…"><span class="codicon codicon-folder-opened"></span></button></div>
+    <div id="ws" hidden>
+      <div class="section" id="ws-head">
+        <span class="codicon codicon-chevron-down" id="ws-tw"></span><span id="ws-name"></span>
+        <span class="actions">
+          <button class="ibtn" id="new-file" title="New File…"><span class="codicon codicon-new-file"></span></button>
+          <button class="ibtn" id="new-folder" title="New Folder…"><span class="codicon codicon-new-folder"></span></button>
+          <button class="ibtn" id="refresh" title="Refresh Explorer"><span class="codicon codicon-refresh"></span></button>
+          <button class="ibtn" id="collapse" title="Collapse Folders in Explorer"><span class="codicon codicon-collapse-all"></span></button>
+        </span>
+      </div>
+      <ul id="tree" tabindex="0" role="tree"></ul>
+    </div>
+    <div id="welcome" class="welcome" hidden>
+      <p>You have not yet opened a folder.</p>
+      <p><button class="btn wide" id="welcome-open">Open Folder</button></p>
+      <p><button class="btn sec wide" id="welcome-clone">Clone from GitHub</button></p>
+      <p class="faint">Folders inside your home folder can be opened. Git operations use your local git &amp; GitHub credentials directly.</p>
+    </div>
+   </div>
+   <div id="view-search" class="view" hidden>
+    <div class="ptitle"><span>Search</span><span class="sp"></span>
+      <button class="ibtn" id="sr-refresh" title="Refresh"><span class="codicon codicon-refresh"></span></button>
+      <button class="ibtn" id="sr-clear" title="Clear Search Results"><span class="codicon codicon-clear-all"></span></button>
+      <button class="ibtn" id="sr-collapse" title="Collapse All"><span class="codicon codicon-collapse-all"></span></button>
+    </div>
+    <div class="sr-box"><div class="sr-input">
+      <input id="sr-q" placeholder="Search" spellcheck="false" autocomplete="off" aria-label="Search">
+      <button class="tgl" id="sr-case" title="Match Case" aria-pressed="false"><span class="codicon codicon-case-sensitive"></span></button>
+      <button class="tgl" id="sr-word" title="Match Whole Word" aria-pressed="false"><span class="codicon codicon-whole-word"></span></button>
+      <button class="tgl" id="sr-regex" title="Use Regular Expression" aria-pressed="false"><span class="codicon codicon-regex"></span></button>
+    </div></div>
+    <div id="sr-msg" class="sr-msg"></div>
+    <div id="sr-res" class="sr-res" tabindex="0" role="tree"></div>
+   </div>
+   <div id="view-git" class="view" hidden>
+    <div class="ptitle"><span>Source Control</span><span class="sp"></span>
+      <button class="ibtn" id="git-clone-btn" title="Clone from GitHub…"><span class="codicon codicon-repo-clone"></span></button>
+      <button class="ibtn" id="git-pull-btn" title="Pull"><span class="codicon codicon-repo-pull"></span></button>
+      <button class="ibtn" id="git-push-btn" title="Push"><span class="codicon codicon-repo-push"></span></button>
+      <button class="ibtn" id="git-fetch-btn" title="Fetch"><span class="codicon codicon-sync"></span></button>
+      <button class="ibtn" id="git-refresh-btn" title="Refresh"><span class="codicon codicon-refresh"></span></button>
+    </div>
+    <div id="git-empty" class="welcome" hidden>
+      <p id="git-empty-msg">Open a folder to use Source Control, or clone a repository directly from GitHub.</p>
+      <p><button class="btn wide" id="git-init-btn">Initialize Repository</button></p>
+      <p><button class="btn sec wide" id="git-empty-clone">Clone from GitHub</button></p>
+    </div>
+    <div id="git-repo" class="view" hidden>
+      <div class="git-remote" id="git-remote"></div>
+      <div class="git-box">
+        <textarea id="git-msg" rows="2" placeholder="Commit message (⌘Enter to commit)"></textarea>
+        <div class="git-btns">
+          <button class="btn" id="git-commit">Commit</button>
+          <button class="btn sec" id="git-commit-push" title="Commit staged changes (or all) and Push to GitHub">Commit &amp; Push</button>
+        </div>
+      </div>
+      <div id="git-list" class="git-list"></div>
+    </div>
+   </div>
+   <div id="view-ext" class="view" hidden>
+    <div class="ptitle"><span>Extensions</span><span class="sp"></span>
+      <button class="ibtn" id="ext-themes" title="Select Color Theme…"><span class="codicon codicon-color-mode"></span></button>
+      <button class="ibtn" id="ext-refresh" title="Refresh Extensions"><span class="codicon codicon-refresh"></span></button>
+    </div>
+    <div class="ext-box">
+      <div class="ext-input">
+        <span class="codicon codicon-search" style="color:var(--faint);font-size:14px"></span>
+        <input id="ext-q" placeholder="Search Extensions in Marketplace" spellcheck="false" autocomplete="off" aria-label="Search Extensions in VS Code Marketplace">
+        <button class="ibtn" id="ext-clear" title="Clear Search" hidden><span class="codicon codicon-close"></span></button>
+      </div>
+    </div>
+    <div id="ext-msg" class="sr-msg" hidden></div>
+    <div id="ext-list" class="ext-list"></div>
+   </div>
+  </aside>
+  <div class="sash" id="sash-side"></div>
+
+  <main id="main">
+    <div id="tabs" role="tablist"></div>
+    <div id="crumbs"></div>
+    <div id="edwrap">
+      <div id="ed"></div>
+      <div id="empty"><div class="wm"><span class="codicon codicon-code logo"></span><dl id="keys"></dl></div></div>
+      <div id="home" hidden>
+        <div class="home-in">
+          <header class="home-hero">
+            <h1>Open. Private. <span class="grad">Light.</span></h1>
+            <p class="home-slogan">开放 · 隐私 · 轻量</p>
+          </header>
+          <div class="home-actions">
+            <button class="home-btn primary" id="home-open-local"><span class="codicon codicon-folder-opened"></span><span>打开本地仓库</span></button>
+            <button class="home-btn" id="home-open-github"><span class="codicon codicon-github"></span><span>从 GitHub 打开</span></button>
+          </div>
+          <div class="home-keys" id="home-keys"></div>
+        </div>
+      </div>
+      <div id="loading">Loading editor…</div>
+    </div>
+    <div class="hsash" id="sash-panel" hidden></div>
+    <section id="panel" hidden aria-label="Terminal">
+      <div class="phead">
+        <span class="ptab">Terminal</span>
+        <div id="terms" role="tablist"></div>
+        <span class="sp"></span>
+        <button class="ibtn" id="term-new" title="New Terminal"><span class="codicon codicon-add"></span></button>
+        <button class="ibtn" id="term-kill" title="Kill Terminal"><span class="codicon codicon-trash"></span></button>
+        <button class="ibtn" id="panel-close" title="Hide Panel"><span class="codicon codicon-close"></span></button>
+      </div>
+      <div id="termbody"></div>
+    </section>
+  </main>
+  <div class="sash" id="sash-chat"></div>
+
+  <section id="chat">
+    <div class="ptitle"><span>Chat</span><span class="sp"></span><select id="agent" title="Agent"></select><button class="ibtn" id="power" title="Start agent"><span class="codicon codicon-play"></span></button></div>
+    <div id="log"></div>
+    <div id="composer">
+      <textarea id="in" rows="1" placeholder="Start an agent to chat"></textarea>
+      <div class="cfoot"><span id="cinfo"></span><button class="ibtn" id="send" title="Send (Enter)" disabled><span class="codicon codicon-send"></span></button></div>
+    </div>
+  </section>
+
+  <footer id="ws-bar" hidden aria-label="Open Projects Taskbar">
+    <div id="ws-tasks" role="tablist"></div>
+    <div id="ws-bar-acts">
+      <button class="ws-add" id="ws-add-local" title="打开本地仓库"><span class="codicon codicon-folder-opened"></span><span>本地</span></button>
+      <button class="ws-add" id="ws-add-gh" title="从 GitHub 克隆仓库"><span class="codicon codicon-github"></span><span>GitHub</span></button>
+    </div>
+  </footer>
+
+  <footer id="status">
+    <span class="si remote" title="Everything runs on this machine"><span class="codicon codicon-remote"></span>Local</span>
+    <button class="si" id="st-root" title="Open Folder…"></button>
+    <button class="si" id="st-git" title="Checkout / Create Branch…" hidden></button>
+    <button class="si" id="st-sync" title="Sync (Pull / Push)" hidden></button>
+    <span class="sp"></span>
+    <button class="si" id="st-pos" title="Go to Line" hidden></button>
+    <button class="si" id="st-indent" title="Select Indentation" hidden></button>
+    <span class="si" id="st-enc" title="File encoding" hidden></span>
+    <button class="si" id="st-eol" title="Select End of Line Sequence" hidden></button>
+    <span class="si" id="st-lang" hidden></span>
+    <button class="si" id="st-agent" title="Toggle Chat"></button>
+  </footer>
+</div>
+
+<dialog id="qp" class="quick" aria-label="Open Folder">
+  <div class="qp-in">
+    <div class="qp-title"><span class="codicon codicon-folder-opened"></span><span>Open Folder</span><span class="sp"></span><button class="ibtn" id="qp-up" title="Parent Folder"><span class="codicon codicon-arrow-up"></span></button></div>
+    <input id="qpin" spellcheck="false" autocomplete="off" aria-label="Folder path">
+    <div id="qpmsg" class="qp-msg" hidden></div>
+    <div id="qplist" class="qlist" role="listbox"></div>
+    <div class="qp-foot">
+      <span class="keys"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>Enter</kbd> go into</span><span><kbd class="mod"></kbd> <kbd>Enter</kbd> open this folder</span></span>
+      <span class="sp"></span><button class="btn sec" id="qp-cancel">Cancel</button><button class="btn" id="qp-ok">Open</button>
+    </div>
+  </div>
+</dialog>
+<dialog id="qo" class="quick" aria-label="Go to File">
+  <div class="qp-in">
+    <input id="qoin" spellcheck="false" autocomplete="off" aria-label="Search files by name, or type > for commands">
+    <div id="qomsg" class="qp-msg" hidden></div>
+    <div id="qolist" class="qlist" role="listbox"></div>
+  </div>
+</dialog>
+<dialog id="modal" aria-labelledby="md-title">
+  <div class="md-body"><span class="codicon codicon-warning"></span><div><p id="md-title"></p><p id="md-detail"></p></div></div>
+  <div id="md-buttons"></div>
+</dialog>
+<dialog id="gitdlg" class="quick" aria-labelledby="gd-title">
+  <form class="qp-in" id="gd-form">
+    <div class="qp-title"><span class="codicon codicon-github"></span><span id="gd-title">Clone from GitHub</span></div>
+    <label><span id="gd-url-lbl">Repository (owner/repo, HTTPS, or git@github.com:...)</span>
+      <input id="gd-url" placeholder="e.g. owner/repo or https://github.com/owner/repo.git" spellcheck="false" autocomplete="off" required>
+    </label>
+    <label id="gd-dir-wrap"><span>Clone into parent folder (under your home folder)</span>
+      <input id="gd-dir" spellcheck="false" autocomplete="off">
+    </label>
+    <div id="gd-err" class="qp-msg err" hidden></div>
+    <div class="gd-foot"><button type="button" class="btn sec" id="gd-cancel">Cancel</button><button type="submit" class="btn" id="gd-ok">Clone</button></div>
+  </form>
+</dialog>
+<dialog id="extdlg" class="quick" aria-labelledby="edlg-title">
+  <div class="qp-in">
+    <div class="edlg-head">
+      <div id="edlg-icon"></div>
+      <div style="flex:1;min-width:0">
+        <div id="edlg-title" class="edlg-title"></div>
+        <div id="edlg-sub" class="edlg-sub"></div>
+      </div>
+      <button type="button" class="ibtn" id="edlg-x" title="Close"><span class="codicon codicon-close"></span></button>
+    </div>
+    <div id="edlg-desc" style="font-size:12.5px;color:var(--fg)"></div>
+    <div id="edlg-themes" hidden></div>
+    <div id="edlg-contribs" class="edlg-chips"></div>
+    <div id="edlg-readme" class="edlg-readme" hidden></div>
+    <div class="gd-foot" id="edlg-acts"></div>
+  </div>
+</dialog>
+<div id="toasts"></div>
+
+<!-- xterm before Monaco's AMD loader: with `define` present, these UMD bundles register as anonymous modules instead of globals -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const enc = encodeURIComponent;
+const MONACO = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min';
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+const isWin = /Win/.test(navigator.platform);
+const MOD = isMac ? '⌘' : 'Ctrl';
+// Shortcut labels, shown the way each OS writes them. Chrome never lets a page take Ctrl+W / Ctrl+N / Ctrl+T,
+// so "close editor" is ⌃W on macOS and Alt+W elsewhere.
+const K = isMac
+  ? { save: '⌘S', saveAll: '⌥⌘S', open: '⌘O', quick: '⌘P', cmd: '⇧⌘P', close: '⌃W', side: '⌘B', rename: 'F2', del: '⌘⌫', line: '⌃G', find: '⇧⌘F', explorer: '⇧⌘E', git: '⌃⇧G', ext: '⇧⌘X', wrap: '⌥Z', term: '⌃`', newTerm: '⌃⇧`' }
+  : { save: 'Ctrl+S', saveAll: 'Ctrl+Alt+S', open: 'Ctrl+O', quick: 'Ctrl+P', cmd: 'Ctrl+Shift+P', close: 'Alt+W', side: 'Ctrl+B', rename: 'F2', del: 'Delete', line: 'Ctrl+G', find: 'Ctrl+Shift+F', explorer: 'Ctrl+Shift+E', git: 'Ctrl+Shift+G', ext: 'Ctrl+Shift+X', wrap: 'Alt+Z', term: 'Ctrl+`', newTerm: 'Ctrl+Shift+`' };
+const keyCaps = k => (isMac ? [...k.replace('F2', '\u0001')].map(c => c === '\u0001' ? 'F2' : c) : k.split('+')).map(c => el('kbd', '', c));
+const TRASH = isWin ? 'Recycle Bin' : 'Trash';
+const HIDDEN = new Set(['.git', '.DS_Store', 'Thumbs.db', 'desktop.ini']);
+const base = p => (p || '').split(/[\\/]/).filter(Boolean).pop() || p || '';
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const icon = (name, cls = '') => el('span', `codicon codicon-${name} ${cls}`);
+const composing = e => e.isComposing || e.keyCode === 229;
+function lightDismiss(d, closeFn) {
+  let downOnBackdrop = false;
+  d.addEventListener('pointerdown', e => { downOnBackdrop = e.target === d; });
+  d.addEventListener('click', e => { if (downOnBackdrop && e.target === d) closeFn(); downOnBackdrop = false; });
+}
+
+// ---------- auth ----------
+// The token arrives in the URL fragment (when launched remotely) or via same-origin /session (when opened directly).
+let token = sessionStorage.token;
+if (location.hash.startsWith('#token=')) { token = location.hash.slice(7); sessionStorage.token = token; history.replaceState(null, '', location.pathname); }
+let tokenReq = null;
+function ensureToken() {
+  return (tokenReq ??= fetch('/session', { method: 'POST' })
+    .then(async r => { if (!r.ok) return false; token = (await r.json()).token; sessionStorage.token = token; return true; })
+    .catch(() => false)
+    .finally(() => { tokenReq = null; }));
+}
+
+async function api(p, o = {}) {
+  if (!token) await ensureToken();
+  const send = () => fetch(p, { ...o, headers: { ...(token && { authorization: 'Bearer ' + token }), ...o.headers } });
+  let r;
+  try { r = await send(); }
+  catch { throw new Error('The local WebIDE server is not reachable.'); }
+  if (r.status === 401 && await ensureToken()) {
+    try { r = await send(); } catch { throw new Error('The local WebIDE server is not reachable.'); }
+  }
+  if (r.status === 401) throw new Error('Session unauthorized.');
+  if (!r.ok) throw Object.assign(new Error((await r.text()) || r.statusText), { status: r.status });
+  return r;
+}
+const getJSON = async p => (await api(p)).json();
+const postJSON = (p, o) => api(p, { method: 'POST', body: JSON.stringify(o) });
+// Monaco rejects internal promises with "Canceled" when models are swapped; that is noise, not an error.
+addEventListener('unhandledrejection', e => { if (e.reason?.name === 'Canceled') e.preventDefault(); });
+// Keep the server from idling out while this page is open (it quits after 30 idle minutes).
+setInterval(() => fetch('/health').catch(() => toast('The local WebIDE server is not reachable.', 'warn')), 5 * 60_000);
+
+// ---------- toasts ----------
+function toast(text, kind = 'info') {
+  const t = el('div', 'toast');
+  t.append(icon(kind === 'error' ? 'error' : kind === 'warn' ? 'warning' : 'info', kind === 'error' ? 'err' : kind === 'warn' ? 'warn' : ''), el('span', '', text));
+  $('#toasts').append(t);
+  setTimeout(() => t.remove(), 5000);
+}
+const fail = e => { toast(e?.message || String(e), 'error'); };
+
+// ---------- layout ----------
+const prefs = { sideW: 260, chatW: 380, side: true, chat: true, view: 'explorer', wrap: false, termH: 260 };
+try { Object.assign(prefs, JSON.parse(localStorage.webidePrefs || '{}')); } catch { /* storage unavailable */ }
+// prefs = what the user chose (saved). shown = what fits in this window right now (never saved),
+// so a narrow window can fold a panel without the user's choice being lost.
+const shown = { ...prefs };
+let lastOpened = 'side', homeOn = false, root = null, editor = null;
+const projects = new Map(); // projRoot -> hibernated/active project state
+function layout() {
+  Object.assign(shown, prefs);
+  const avail = innerWidth - 48, ed = () => avail - (shown.side ? shown.sideW : 0) - (shown.chat ? shown.chatW : 0);
+  const other = lastOpened === 'side' ? 'chat' : 'side';
+  if (ed() < 360 && shown.side && shown.chat) shown[other] = false; // both don't fit: keep the one opened last
+  if (ed() < 360 && shown.chat) shown.chatW = Math.max(260, avail - 360 - (shown.side ? shown.sideW : 0));
+  if (ed() < 360 && shown.side) shown.sideW = Math.max(170, avail - 360 - (shown.chat ? shown.chatW : 0));
+  const sideOn = !homeOn && shown.side, chatOn = !homeOn && shown.chat;
+  const barOn = projects.size > 0 && !(homeOn && !root);
+  const stHidden = homeOn && !root;
+  $('#app').style.gridTemplateColumns = `48px ${sideOn ? shown.sideW : 0}px 0 minmax(0, 1fr) 0 ${chatOn ? shown.chatW : 0}px`;
+  $('#app').style.gridTemplateRows = `minmax(0, 1fr) ${barOn ? '34px' : '0px'} ${stHidden ? '0px' : '22px'}`;
+  $('#side').hidden = $('#sash-side').hidden = !sideOn;
+  $('#chat').hidden = $('#sash-chat').hidden = !chatOn;
+  $('#ws-bar').hidden = !barOn;
+  $('#status').hidden = stHidden;
+  $('#view-explorer').hidden = prefs.view !== 'explorer';
+  $('#view-search').hidden = prefs.view !== 'search';
+  $('#view-git').hidden = prefs.view !== 'git';
+  $('#view-ext').hidden = prefs.view !== 'ext';
+  $('#act-files').classList.toggle('on', sideOn && prefs.view === 'explorer');
+  $('#act-search').classList.toggle('on', sideOn && prefs.view === 'search');
+  $('#act-git').classList.toggle('on', sideOn && prefs.view === 'git');
+  $('#act-ext').classList.toggle('on', sideOn && prefs.view === 'ext');
+  $('#act-chat').classList.toggle('on', chatOn);
+  $('#panel').style.height = Math.max(100, Math.min(prefs.termH, innerHeight - 22 - 35 - 120)) + 'px'; // the editor keeps ~120px
+  try { localStorage.webidePrefs = JSON.stringify(prefs); } catch { /* storage unavailable */ }
+}
+function toggle(key) {
+  prefs[key] = !shown[key];
+  if (prefs[key]) lastOpened = key;
+  layout();
+}
+function sash(id, key, dir, min, max) {
+  const s = $(id);
+  s.onpointerdown = e => {
+    e.preventDefault();
+    lastOpened = key === 'sideW' ? 'side' : 'chat';
+    s.setPointerCapture(e.pointerId); s.classList.add('drag');
+    const x0 = e.clientX, w0 = shown[key];
+    s.onpointermove = m => { prefs[key] = Math.max(min, Math.min(max, w0 + dir * (m.clientX - x0))); layout(); };
+    s.onpointerup = s.onpointercancel = () => { s.onpointermove = null; s.classList.remove('drag'); };
+  };
+}
+$('#sash-panel').onpointerdown = e => { // drag the panel's top edge
+  const s = e.currentTarget, y0 = e.clientY, h0 = $('#panel').offsetHeight;
+  e.preventDefault(); s.setPointerCapture(e.pointerId); s.classList.add('drag');
+  s.onpointermove = m => { prefs.termH = Math.max(100, h0 - (m.clientY - y0)); layout(); };
+  s.onpointerup = s.onpointercancel = () => { s.onpointermove = null; s.classList.remove('drag'); };
+};
+sash('#sash-side', 'sideW', 1, 170, 600);
+sash('#sash-chat', 'chatW', -1, 260, 800);
+addEventListener('resize', layout);
+// Side bar views (Explorer / Search). As in VS Code, clicking the icon of the view already showing hides the side bar.
+function showView(v) {
+  if (homeOn) showHome(false);
+  prefs.view = v;
+  if (!shown.side) toggle('side'); else layout();
+}
+const activityClick = v => () => {
+  if (homeOn) return showView(v);
+  shown.side && prefs.view === v ? toggle('side') : showView(v);
+};
+function showHome(on) {
+  homeOn = !!on;
+  $('#home').hidden = !homeOn;
+  $('#act-home').classList.toggle('on', homeOn);
+  renderProjectBar();
+}
+$('#act-home').onclick = () => showHome(root ? !homeOn : true);
+$('#home-open-local').onclick = () => openFolder().catch(fail);
+$('#home-open-github').onclick = () => openGitDialog('clone');
+$('#act-files').onclick = activityClick('explorer');
+$('#act-search').onclick = () => (!homeOn && shown.side && prefs.view === 'search' ? toggle('side') : openSearch());
+$('#act-git').onclick = () => (!homeOn && shown.side && prefs.view === 'git' ? toggle('side') : openGitView());
+$('#act-ext').onclick = () => (!homeOn && shown.side && prefs.view === 'ext' ? toggle('side') : openExtView());
+$('#act-chat').onclick = () => (homeOn ? (showHome(false), !prefs.chat && toggle('chat')) : toggle('chat'));
+$('#st-agent').onclick = () => toggle('chat');
+layout();
+$('#keys').append(...[['Show All Commands', K.cmd], ['Go to File', K.quick], ['Find in Files', K.find], ['Open Folder', K.open], ['Toggle Sidebar', K.side]]
+  .flatMap(([label, k]) => { const dd = el('dd'); dd.append(...keyCaps(k)); return [el('dt', '', label), dd]; }));
+$('#home-keys').append(...[['打开本地仓库', K.open], ['快速打开文件', K.quick], ['命令面板', K.cmd], ['全局搜索', K.find], ['源代码管理', K.git], ['终端', K.term]].map(([label, k]) => {
+  const s = el('span'); s.append(el('span', '', label), ...keyCaps(k)); return s;
+}));
+$$('kbd.mod').forEach(k => k.textContent = MOD);
+
+// ---------- folder picker (VS Code style quick input) ----------
+const qp = { dir: '', sep: '/', parent: null, dirs: [], items: [], active: 0, filter: '', err: '', seq: 0, done: null, busy: Promise.resolve() };
+async function qpBrowse(p) {
+  const d = await getJSON('/fs/browse?path=' + enc(p));
+  Object.assign(qp, { dir: d.path, sep: d.sep || '/', parent: d.parent, dirs: d.dirs, err: '' });
+}
+async function pickRoot() {
+  if ($('#qp').open) return false; // already showing
+  if (qp.done) qpClose(false);      // stale state from a picker that closed without telling us
+  try { await qpBrowse(root || ''); } catch (e) { fail(e); return false; }
+  const inp = $('#qpin');
+  inp.value = qp.dir + qp.sep;
+  qpRender('');
+  $('#qp').showModal();
+  inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length);
+  return new Promise(ok => { qp.done = ok; });
+}
+function qpClose(result) {
+  const done = qp.done; qp.done = null;
+  if ($('#qp').open) $('#qp').close();
+  done?.(result);
+}
+function qpRender(f = qp.filter) {
+  qp.filter = f;
+  const fl = f.toLowerCase();
+  qp.items = (qp.parent && !f ? [{ name: '..', path: qp.parent, up: true }] : []).concat(qp.dirs.filter(d => d.name.toLowerCase().includes(fl)));
+  qp.active = 0;
+  $('#qplist').replaceChildren(...qp.items.map((it, k) => {
+    const row = el('div', 'qi'); row.setAttribute('role', 'option');
+    const name = el('span');
+    const j = fl && !it.up ? it.name.toLowerCase().indexOf(fl) : -1;
+    if (j >= 0) name.append(it.name.slice(0, j), el('mark', '', it.name.slice(j, j + f.length)), it.name.slice(j + f.length));
+    else name.textContent = it.name;
+    row.append(icon(it.up ? 'arrow-up' : 'folder'), name);
+    if (it.up) row.append(el('span', 'qd', 'parent folder'));
+    row.onclick = () => qpEnter(it);
+    row.onmousemove = () => { if (qp.active !== k) qpSetActive(k); };
+    return row;
+  }));
+  qpSetActive(0);
+  const msg = qp.err || (qp.items.length ? '' : f ? 'No matching folders' : 'This folder has no subfolders');
+  $('#qpmsg').textContent = msg; $('#qpmsg').hidden = !msg; $('#qpmsg').classList.toggle('err', !!qp.err);
+  $('#qp-up').disabled = !qp.parent;
+}
+function qpSetActive(k) {
+  qp.active = k;
+  $$('#qplist .qi').forEach((r, i) => r.classList.toggle('on', i === k));
+  $$('#qplist .qi')[k]?.scrollIntoView({ block: 'nearest' });
+}
+async function qpInput() {
+  const v = $('#qpin').value, i = Math.max(v.lastIndexOf('/'), v.lastIndexOf('\\'));
+  let dir = i < 0 ? '' : (v.slice(0, i) || qp.sep), f = v.slice(i + 1);
+  if (/^[a-zA-Z]:$/.test(dir)) dir += '\\';
+  if (dir && dir !== qp.dir) {
+    const n = ++qp.seq;
+    try { await qpBrowse(dir); }
+    catch (e) {
+      if (n !== qp.seq) return;
+      if (e.status === 403 && v && !v.endsWith('/') && !v.endsWith('\\')) {
+        try { await qpBrowse(v); if (n === qp.seq) return qpRender(''); } catch { /* fall through to error */ }
+        if (n !== qp.seq) return;
+      }
+      Object.assign(qp, { dir, parent: null, dirs: [], err: e.status === 403 ? 'Only folders inside your home folder can be opened.' : 'Folder not found.' });
+    }
+    if (n !== qp.seq) return;
+  }
+  qpRender(f);
+}
+const qpSync = () => (qp.busy = qpInput());
+function qpEnter(it) {
+  const inp = $('#qpin');
+  inp.value = it.path.endsWith(qp.sep) ? it.path : it.path + qp.sep;
+  inp.focus();
+  qpSync();
+}
+async function qpAccept() {
+  await qp.busy;
+  if (qp.err) return;
+  const exact = qp.dirs.find(d => d.name === qp.filter);
+  try {
+    const d = await (await postJSON('/root', { path: exact ? exact.path : qp.dir, projects: [...projects.keys()] })).json();
+    qpClose(d.root);
+  } catch (e) { qp.err = e.message; qpRender(); }
+}
+$('#qpin').oninput = qpSync;
+$('#qpin').onkeydown = e => {
+  if (composing(e)) return;
+  const n = qp.items.length;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (n) qpSetActive((qp.active + (e.key === 'ArrowDown' ? 1 : -1) + n) % n); }
+  else if (e.key === 'Enter') { e.preventDefault(); if (e.metaKey || e.ctrlKey || !n) qpAccept(); else qpEnter(qp.items[qp.active]); }
+  else if (e.key === 'Tab' && n) { e.preventDefault(); qpEnter(qp.items[qp.active]); }
+};
+$('#qp-ok').onclick = qpAccept;
+$('#qp-cancel').onclick = () => qpClose(false);
+$('#qp-up').onclick = () => { if (qp.parent) qpEnter({ path: qp.parent }); };
+// Esc: handle 'cancel' ourselves. Some Chromium builds close the dialog on Esc without ever firing 'close',
+// which used to leave the picker "busy" so every Open Folder entry point silently did nothing.
+$('#qp').addEventListener('cancel', e => { e.preventDefault(); qpClose(false); });
+$('#qp').addEventListener('close', () => qpClose(false));
+lightDismiss($('#qp'), () => qpClose(false));
+
+// ---------- workspace + multi-project taskbar & resource hibernation ----------
+const expanded = new Set();
+let selected = null; // { rel, dir } last clicked row in the explorer
+const emptyProj = p => ({
+  root: p, name: base(p), active: null, tabs: [], expanded: [], selected: null, recent: [],
+  terms: [], termOnId: null, panelOpen: false,
+  agent: { sid: null, acp: null, name: '', state: 'off', lineCursor: 0, pending: new Map(), toolEls: new Map(), turn: null, curText: null, curThought: null, outEl: null, outN: 0, logFrag: null },
+});
+const projDirty = p => (p.root === root ? [...tabs.values()].some(isDirty) : p.tabs.some(t => t.dirty));
+function renderProjectBar() {
+  const bar = $('#ws-tasks');
+  if (!bar) return;
+  bar.replaceChildren(...[...projects.values()].map(p => {
+    const on = p.root === root && !homeOn;
+    const item = el('div', 'ws-task' + (on ? ' on' : ''));
+    item.setAttribute('role', 'tab');
+    item.setAttribute('aria-selected', String(on));
+    item.title = `${p.root}${p.root !== root ? ' (休眠中 — 点击唤醒切换)' : ' (当前运行)'}`;
+    const dot = el('span', 'ws-dot');
+    const name = el('span', 'ws-name', p.name);
+    const nodes = [dot, name];
+    if (projDirty(p)) nodes.push(el('span', 'ws-dirty'));
+    if (p.root !== root) nodes.push(el('span', 'ws-sleep', '休眠'));
+    const x = el('button', 'ws-x'); x.title = '关闭工程'; x.append(icon('close'));
+    x.onclick = e => { e.stopPropagation(); closeProject(p.root).catch(fail); };
+    nodes.push(x);
+    item.append(...nodes);
+    item.onclick = () => (p.root === root ? showHome(false) : switchProject(p.root).catch(fail));
+    return item;
+  }));
+  $('#ws-tasks .ws-task.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  layout();
+}
+$('#ws-bar')?.addEventListener('wheel', e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { $('#ws-tasks').scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
+$('#ws-add-local').onclick = () => openFolder().catch(fail);
+$('#ws-add-gh').onclick = () => openGitDialog('clone');
+
+function fileIcon(name) {
+  const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+  const color = { js: '#cbcb41', mjs: '#cbcb41', cjs: '#cbcb41', jsx: '#61dafb', ts: '#3178c6', tsx: '#61dafb', py: '#4b8bbe', go: '#00add8', rs: '#dea584', java: '#e76f00', kt: '#a97bff', c: '#a8b9cc', h: '#a8b9cc', cpp: '#f34b7d', cs: '#9b4f96', rb: '#cc342d', php: '#8892bf', swift: '#f05138', html: '#e44d26', css: '#42a5f5', scss: '#cd6799', json: '#cbcb41', md: '#519aba', yml: '#a074c4', yaml: '#a074c4', toml: '#9c4221', sh: '#89e051', sql: '#e38c00', vue: '#41b883', svelte: '#ff3e00' }[ext] || 'var(--dim)';
+  const name_ = ext === 'md' ? 'markdown' : ext === 'json' ? 'json' : /^(png|jpe?g|gif|svg|webp|ico)$/.test(ext) ? 'file-media' : color !== 'var(--dim)' ? 'file-code' : 'file';
+  const i = icon(name_); i.style.color = color; return i;
+}
+
+async function renderDir(dir, ul, depth) {
+  let items;
+  try { items = (await getJSON('/fs/tree?dir=' + enc(dir))).filter(it => !HIDDEN.has(it.name)); }
+  catch (e) { expanded.delete(dir); if (!dir) fail(e); return; }
+  const lis = [];
+  for (const it of items) {
+    const rel = dir ? dir + '/' + it.name : it.name;
+    const li = el('li'), row = el('div', 'row');
+    row.dataset.rel = rel; row.dataset.dir = it.dir ? '1' : ''; row.title = rel; row.setAttribute('role', 'treeitem');
+    row.style.paddingLeft = depth * 8 + 8 + 'px';
+    row.draggable = true;
+    row.ondragstart = e => { e.dataTransfer.setData(DRAG_PATH, rel); e.dataTransfer.effectAllowed = 'move'; dragDir = it.dir; };
+    if (it.dir) {
+      const tw = icon(expanded.has(rel) ? 'chevron-down' : 'chevron-right', 'tw');
+      const sub = el('ul'); sub.setAttribute('role', 'group');
+      row.append(tw, el('span', 'name', it.name));
+      li.append(row, sub);
+      row.onclick = () => treeQueue(async () => {
+        select(rel, true);
+        const open = !expanded.has(rel);
+        open ? expanded.add(rel) : expanded.delete(rel);
+        tw.className = `codicon codicon-${open ? 'chevron-down' : 'chevron-right'} tw`;
+        sub.hidden = !open;
+        if (open) await renderDir(rel, sub, depth + 1);
+      });
+      if (expanded.has(rel)) await renderDir(rel, sub, depth + 1); else sub.hidden = true;
+    } else {
+      row.append(el('span', 'tw'), fileIcon(it.name), el('span', 'name', it.name));
+      li.append(row);
+      row.onclick = () => { select(rel, false); openFile(rel, { preview: true }).catch(fail); };
+      row.ondblclick = () => openFile(rel).catch(fail); // double-click keeps it open (pins the preview)
+    }
+    lis.push(li);
+  }
+  ul.replaceChildren(...lis);
+}
+function select(rel, isDir) {
+  selected = rel == null ? null : { rel, dir: isDir };
+  $$('#tree .row.sel').forEach(r => r.classList.remove('sel'));
+  if (rel != null) $(`#tree .row[data-rel="${CSS.escape(rel)}"]`)?.classList.add('sel');
+}
+// Every tree mutation goes through one queue, so a slow re-render can never overwrite a newer DOM change
+// (e.g. the inline "new file" input, or a folder the user just expanded).
+let treeJob = Promise.resolve();
+const treeQueue = fn => (treeJob = treeJob.then(fn).catch(fail));
+async function drawTree() { // only call from inside a queued job
+  if (!root) return;
+  await renderDir('', $('#tree'), 0);
+  select(selected?.rel ?? active, selected?.dir ?? false);
+}
+const renderTree = () => treeQueue(drawTree);
+
+// New file / folder: inline input row inside the selected folder (or the root), like VS Code.
+// Both steps (showing the input, then creating + redrawing) are queued tree jobs, so they run strictly in click order.
+function newEntry(kind) {
+  if (!root) return Promise.resolve();
+  showView('explorer');
+  $('#tree').hidden = false; $('#ws-tw').className = 'codicon codicon-chevron-down';
+  return treeQueue(async () => {
+    let parent = !selected ? '' : selected.dir ? selected.rel : selected.rel.split('/').slice(0, -1).join('/');
+    let ul = $('#tree'), depth = 0;
+    if (parent) {
+      if (!expanded.has(parent)) { expanded.add(parent); await drawTree(); }
+      const pRow = $(`#tree .row[data-rel="${CSS.escape(parent)}"]`);
+      if (pRow?.nextElementSibling) { ul = pRow.nextElementSibling; ul.hidden = false; depth = parent.split('/').length; }
+      else parent = '';
+    }
+    $$('#tree .row.edit input').forEach(i => { i.onblur = null; i.closest('li').remove(); });
+    const li = el('li'), row = el('div', 'row edit'), input = el('input');
+    input.setAttribute('aria-label', kind === 'file' ? 'New file name' : 'New folder name');
+    row.style.paddingLeft = depth * 8 + 8 + 'px';
+    row.append(el('span', 'tw'), icon(kind === 'file' ? 'file' : 'folder'), input);
+    li.append(row); ul.prepend(li);
+    li.scrollIntoView({ block: 'nearest' });
+    input.focus();
+    let busy = false;
+    const cancel = () => { if (!busy && li.isConnected) { input.onblur = null; li.remove(); } };
+    // Removing a focused input fires blur synchronously; defer, and keep the row if focus came back to it.
+    input.onblur = () => setTimeout(() => { if (document.activeElement !== input) cancel(); });
+    input.oninput = () => row.classList.remove('bad');
+    input.onkeydown = e => {
+      e.stopPropagation();
+      if (composing(e)) return;
+      if (e.key === 'Escape') { e.preventDefault(); return cancel(); }
+      if (e.key !== 'Enter' || busy) return;
+      e.preventDefault();
+      const name = normName(input.value);
+      if (!name) return cancel();
+      const bad = badName(name);
+      if (bad) { row.classList.add('bad'); return toast(bad, 'warn'); }
+      const rel = parent ? parent + '/' + name : name;
+      busy = true;
+      treeQueue(async () => {
+        try {
+          if (kind === 'file') await api('/fs/file?create=1&path=' + enc(rel), { method: 'PUT', body: '' });
+          else await postJSON('/fs/mkdir', { path: rel });
+        } catch (err) {
+          busy = false; row.classList.add('bad'); input.focus();
+          return toast(err.status === 409 ? `"${name}" already exists. Choose a different name.` : err.message, 'error');
+        }
+        input.onblur = null; li.remove();
+        rel.split('/').slice(0, -1).reduce((acc, seg) => { const p = acc ? acc + '/' + seg : seg; expanded.add(p); return p; }, '');
+        if (kind === 'folder') expanded.add(rel);
+        selected = { rel, dir: kind === 'folder' };
+        await drawTree();
+        if (kind === 'file') await openFile(rel);
+      });
+    };
+  });
+}
+
+function hibernateCurrent(projRoot = root) {
+  if (!projRoot) return;
+  const prevActive = active;
+  if (active && tabs.has(active)) {
+    const cur = tabs.get(active);
+    if (cur.model) cur.view = editor.saveViewState();
+  }
+  closeCompare();
+  watchCtl?.abort(); watchCtl = null;
+  clearTimeout(diskTimer); diskChanged.clear(); structural = false;
+  clearTimeout(gitTimer); gitSeq++;
+  const tabSnaps = [];
+  for (const [rel, t] of tabs) {
+    const dirty = isDirty(t);
+    tabSnaps.push({
+      rel,
+      preview: t.preview,
+      etag: t.etag,
+      bom: t.bom,
+      dirty,
+      text: dirty ? (t.model ? fileText(t) : t.text) : undefined,
+      view: t.view,
+    });
+    t.model?.dispose();
+  }
+  tabs.clear();
+  active = null;
+  editor?.setModel(blankModel);
+  const termSnaps = terms.map(x => {
+    if (x.attached) { x.ctl.abort(); x.term.dispose(); x.box.remove(); }
+    return { id: x.id, pty: x.pty, name: x.name, line: x.line || '' };
+  });
+  const termOnId = termOn?.id || null;
+  const panelOpen = !$('#panel').hidden;
+  terms.length = 0; termOn = null;
+  $('#terms').replaceChildren();
+  showPanel(false);
+  agentCtl?.abort(); agentCtl = null;
+  let logFrag = null;
+  if (!$('#chat-empty')) {
+    logFrag = document.createDocumentFragment();
+    while ($('#log').firstChild) logFrag.append($('#log').firstChild);
+  }
+  const agentSnap = {
+    sid, acp, name: agentName, state: agentState, lineCursor: agentLineCursor,
+    pending: new Map(pending), toolEls: new Map(toolEls),
+    turn, curText, curThought, outEl, outN, logFrag,
+  };
+  sid = acp = null; agentName = ''; agentState = 'off'; agentLineCursor = 0;
+  pending.clear(); toolEls.clear();
+  turn = curText = curThought = outEl = null; outN = 0;
+  setAgent('off'); chatEmpty();
+  $('#tree').replaceChildren();
+  $('#sr-res').replaceChildren(); $('#sr-msg').textContent = ''; sr.last = null;
+  $('#git-list').replaceChildren(); gitState = null; gitCommits = [];
+  qo.files = []; qo.truncated = false; qo.loaded = false;
+  projects.set(projRoot, {
+    root: projRoot,
+    name: base(projRoot),
+    active: prevActive,
+    tabs: tabSnaps,
+    expanded: [...expanded],
+    selected,
+    recent: [...recent],
+    terms: termSnaps,
+    termOnId,
+    panelOpen,
+    agent: agentSnap,
+  });
+}
+
+async function restoreProject(projRoot) {
+  let snap = projects.get(projRoot);
+  if (!snap) { snap = emptyProj(projRoot); projects.set(projRoot, snap); }
+  expanded.clear(); snap.expanded.forEach(p => expanded.add(p));
+  selected = snap.selected || null;
+  recent.splice(0, recent.length, ...(snap.recent || []));
+  qo.files = []; qo.truncated = false; qo.loaded = false;
+  tabs.clear();
+  for (const ts of snap.tabs) {
+    tabs.set(ts.rel, {
+      model: null,
+      saved: ts.dirty ? -1 : 0,
+      etag: ts.etag,
+      bom: !!ts.bom,
+      preview: !!ts.preview,
+      reloading: false,
+      dirty: !!ts.dirty,
+      text: ts.text,
+      view: ts.view || null,
+    });
+  }
+  active = null;
+  terms.length = 0;
+  for (const ts of snap.terms) terms.push({ ...ts, attached: false });
+  termOn = terms.find(x => x.id === snap.termOnId) || terms[0] || null;
+  renderTerms();
+  if (snap.panelOpen && terms.length) showPanel(true); else showPanel(false);
+  const ag = snap.agent || emptyProj(projRoot).agent;
+  sid = ag.sid; acp = ag.acp; agentName = ag.name || ''; agentState = ag.state || 'off';
+  agentLineCursor = ag.lineCursor || 0;
+  pending.clear(); ag.pending?.forEach((v, k) => pending.set(k, v));
+  toolEls.clear(); ag.toolEls?.forEach((v, k) => toolEls.set(k, v));
+  turn = ag.turn; curText = ag.curText; curThought = ag.curThought; outEl = ag.outEl; outN = ag.outN || 0;
+  if (ag.logFrag) $('#log').replaceChildren(ag.logFrag); else chatEmpty();
+  if (agentName) $('#agent').value = agentName;
+  setAgent(agentState);
+  if (sid) pump(sid, agentLineCursor).catch(() => {});
+  $('#ws').hidden = !root; $('#welcome').hidden = !!root;
+  $('#ws-name').textContent = base(root);
+  $('#ws-head').title = root || '';
+  document.title = root ? `${base(root)} — WebIDE` : 'WebIDE';
+  sr.last = null; $('#sr-res').replaceChildren(); $('#sr-msg').textContent = '';
+  showHome(false);
+  await activate(snap.active);
+  watchRoot();
+  await renderTree();
+  scheduleGitRefresh(0);
+  renderProjectBar();
+}
+
+async function switchProject(targetRoot) {
+  if (!targetRoot) return;
+  if (targetRoot === root) return showHome(false);
+  if (root) hibernateCurrent(root);
+  const d = await (await postJSON('/root', { path: targetRoot, projects: [...projects.keys()] })).json();
+  root = d.root;
+  await restoreProject(root);
+}
+
+async function closeProject(projRoot) {
+  const p = projects.get(projRoot);
+  if (!p) return false;
+  if (projRoot === root) {
+    const dirty = [...tabs].filter(([, t]) => isDirty(t)).map(([r]) => r);
+    if (dirty.length) {
+      const r = await modal(`Do you want to save the changes to ${dirty.length === 1 ? base(dirty[0]) : dirty.length + ' files'} before closing ${base(projRoot)}?`,
+        "Your changes will be lost if you don't save them.",
+        [{ label: dirty.length === 1 ? 'Save' : 'Save All', value: 'save', primary: true }, { label: "Don't Save", value: 'discard' }, { label: 'Cancel', value: 'cancel' }]);
+      if (r === 'cancel') return false;
+      if (r === 'save' && !(await saveAll())) return false;
+    }
+    await stopAgent(true);
+    terms.slice().forEach(killTerm);
+    closeAll(true);
+    watchCtl?.abort(); watchCtl = null;
+    clearTimeout(diskTimer); diskChanged.clear(); structural = false;
+    clearTimeout(gitTimer); gitSeq++;
+  } else {
+    if (p.tabs.some(t => t.dirty)) {
+      await switchProject(projRoot);
+      return closeProject(projRoot);
+    }
+    p.terms.forEach(t => api('/term/' + t.id, { method: 'DELETE' }).catch(() => {}));
+    if (p.agent?.sid) api('/agent/' + p.agent.sid, { method: 'DELETE' }).catch(() => {});
+  }
+  projects.delete(projRoot);
+  if (projRoot === root) {
+    const next = [...projects.keys()].pop() || null;
+    if (next) {
+      const d = await (await postJSON('/root', { path: next, projects: [...projects.keys()] })).json();
+      root = d.root;
+      await restoreProject(root);
+    } else {
+      await postJSON('/root', { path: null, projects: [] });
+      root = null;
+      expanded.clear(); selected = null; recent.length = 0;
+      $('#ws').hidden = true; $('#welcome').hidden = false;
+      $('#ws-name').textContent = ''; $('#ws-head').title = '';
+      document.title = 'WebIDE';
+      updateStatus();
+      sr.last = null; $('#sr-res').replaceChildren(); $('#sr-msg').textContent = '';
+      $('#git-list').replaceChildren(); gitState = null; gitCommits = [];
+      showHome(true);
+      renderProjectBar();
+      scheduleGitRefresh(0);
+    }
+  } else {
+    await postJSON('/projects', { projects: [...projects.keys()] });
+    renderProjectBar();
+  }
+  return true;
+}
+
+async function loadRoot() {
+  const d = await getJSON('/root');
+  projects.clear();
+  for (const p of d.projects || (d.root ? [d.root] : [])) projects.set(p, emptyProj(p));
+  root = d.root || null;
+  if (root) {
+    await restoreProject(root);
+  } else {
+    closeAll(true);
+    expanded.clear(); selected = null; recent.length = 0;
+    $('#ws').hidden = true; $('#welcome').hidden = false;
+    $('#ws-name').textContent = ''; $('#ws-head').title = '';
+    document.title = 'WebIDE';
+    updateStatus();
+    showHome(true);
+    renderProjectBar();
+    scheduleGitRefresh(0);
+  }
+}
+async function openFolder() {
+  const prev = root;
+  const next = await pickRoot();
+  if (!next) return;
+  if (next === prev) { showHome(false); return; }
+  if (prev) hibernateCurrent(prev);
+  root = next;
+  await restoreProject(root);
+}
+$('#open-folder').onclick = () => openFolder().catch(fail);
+$('#welcome-open').onclick = () => openFolder().catch(fail);
+$('#st-root').onclick = () => openFolder().catch(fail);
+$('#refresh').onclick = e => { e.stopPropagation(); renderTree().catch(fail); };
+$('#collapse').onclick = e => { e.stopPropagation(); expanded.clear(); renderTree().catch(fail); };
+$('#new-file').onclick = e => { e.stopPropagation(); newEntry('file').catch(fail); };
+$('#new-folder').onclick = e => { e.stopPropagation(); newEntry('folder').catch(fail); };
+$('#ws-head').onclick = () => { const t = $('#tree'); t.hidden = !t.hidden; $('#ws-tw').className = `codicon codicon-${t.hidden ? 'chevron-right' : 'chevron-down'}`; };
+$('#tree').addEventListener('click', e => { if (e.target === $('#tree')) select(null); }); // click empty space: new items go to the root
+
+// ---------- editors / tabs ----------
+const tabs = new Map(); // rel -> { model, saved, view, bom }
+let active = null, blankModel = null;
+const recent = []; // most recently opened files, for Go to File
+const DRAG_PATH = 'text/x-webide-path', DRAG_TAB = 'text/x-webide-tab'; // drag payload types (lowercase: browsers normalise them)
+let dragDir = false;
+const isDirty = t => (t.model ? t.model.getAlternativeVersionId() !== t.saved : !!t.dirty);
+
+// Response.text() silently drops a UTF-8 BOM; keep it (common in Windows files) so saving doesn't rewrite the file.
+// etag = the disk version this text came from; Save sends it back so the bridge can refuse to clobber someone else's change.
+async function readFile(rel) {
+  const r = await api('/fs/file?path=' + enc(rel));
+  return { text: new TextDecoder('utf-8', { ignoreBOM: true }).decode(await r.arrayBuffer()), etag: r.headers.get('x-etag') };
+}
+const fileText = t => (t.model ? t.model.getValue(monaco.editor.EndOfLinePreference.TextDefined, true) : (t.text ?? '')); // keeps the file's own EOL + BOM
+
+function newModel(rel, text, etag = null) {
+  const model = monaco.editor.createModel(text, undefined, monaco.Uri.file('/' + rel));
+  const t = { model, saved: model.getAlternativeVersionId(), etag, view: null, bom: text.charCodeAt(0) === 0xfeff, preview: false, reloading: false, dirty: false };
+  model.onDidChangeContent(() => { if (!t.reloading) t.preview = false; renderTabs(); renderProjectBar(); }); // typing pins a preview tab
+  return t;
+}
+async function ensureTabModel(rel, t) {
+  if (t.model) return t.model;
+  let text = t.text;
+  if (!t.dirty) {
+    const d = await readFile(rel);
+    text = d.text; t.etag = d.etag; t.bom = text.charCodeAt(0) === 0xfeff;
+  }
+  if (t.model) return t.model;
+  const model = monaco.editor.createModel(text, undefined, monaco.Uri.file('/' + rel));
+  t.model = model;
+  t.saved = t.dirty ? -1 : model.getAlternativeVersionId();
+  delete t.text;
+  model.onDidChangeContent(() => { if (!t.reloading) t.preview = false; renderTabs(); renderProjectBar(); });
+  return model;
+}
+// preview: single-click style open. At most one preview tab exists; the next preview open replaces it in place.
+let openSeq = 0;
+async function openFile(rel, { preview = false } = {}) {
+  const seq = ++openSeq, openRoot = root;
+  let replaced = null;
+  if (!tabs.has(rel)) {
+    let text, etag;
+    try { ({ text, etag } = await readFile(rel)); }
+    catch (e) {
+      if (e.status === 415) throw new Error(`${base(rel)} is a binary file and can't be opened in the text editor.`);
+      if (e.status === 413) throw new Error(`${base(rel)} is larger than 5 MB and can't be opened.`);
+      throw e;
+    }
+    if (root !== openRoot || seq !== openSeq) return;
+    if (!tabs.has(rel)) { // (opened twice quickly: keep the first)
+      const t = newModel(rel, text, etag);
+      t.preview = preview;
+      const old = preview && [...tabs].find(([, x]) => x.preview && !isDirty(x));
+      if (old) {
+        const entries = [...tabs].map(([k, v]) => (k === old[0] ? [rel, t] : [k, v]));
+        tabs.clear(); entries.forEach(([k, v]) => tabs.set(k, v));
+        if (active === old[0]) active = null;
+        replaced = old[1].model;
+      } else tabs.set(rel, t);
+    }
+  } else if (!preview) tabs.get(rel).preview = false; // opened "for real": pin it
+  recent.splice(0, recent.length, rel, ...recent.filter(r => r !== rel).slice(0, 19));
+  await activate(rel);
+  replaced?.dispose(); // after the editor switched away from it
+}
+async function activate(rel, { noReveal = false } = {}) {
+  if (active && tabs.has(active)) {
+    const cur = tabs.get(active);
+    if (cur.model) cur.view = editor.saveViewState();
+  }
+  active = rel && tabs.has(rel) ? rel : null;
+  if (diff && diff.rel !== active) closeCompare();
+  const t = active && tabs.get(active);
+  if (t) {
+    showHome(false);
+    if (!t.model) {
+      const seq = ++openSeq, openRoot = root;
+      try { await ensureTabModel(active, t); } catch (e) { fail(e); return; }
+      if (root !== openRoot || active !== rel || seq !== openSeq) return;
+    }
+  }
+  // Never setModel(null): Monaco then rebuilds its view and, in 0.52, clicks on the rebuilt view stop focusing it
+  // (typing goes nowhere). A blank placeholder model behind the watermark avoids that.
+  editor.setModel(t ? t.model : blankModel);
+  editor.updateOptions({ readOnly: !t });
+  if (t?.view) editor.restoreViewState(t.view);
+  $('#empty').hidden = !!t;
+  $('#tabs').hidden = $('#crumbs').hidden = !tabs.size;
+  renderTabs(); renderCrumbs(); updateStatus();
+  if (t) { if (!noReveal) reveal(active); editor.focus(); }
+}
+// Returns false if the user cancelled. force = drop without asking (only where the content is already safe).
+async function closeTab(rel, force = false) {
+  const t = tabs.get(rel);
+  if (!t) return true;
+  if (!force && isDirty(t)) {
+    if (active !== rel) await activate(rel);
+    const r = await modal(`Do you want to save the changes you made to ${base(rel)}?`, "Your changes will be lost if you don't save them.",
+      [{ label: 'Save', value: 'save', primary: true }, { label: "Don't Save", value: 'discard' }, { label: 'Cancel', value: 'cancel' }]);
+    if (r === 'cancel') return false;
+    if (r === 'save') { try { if (!(await saveTab(rel))) return false; } catch (e) { fail(e); return false; } } // conflict: keep the tab
+  }
+  if (!tabs.has(rel)) return true;
+  const keys = [...tabs.keys()], i = keys.indexOf(rel);
+  tabs.delete(rel);
+  if (active === rel) { active = null; await activate(keys[i + 1] ?? keys[i - 1] ?? null); } else renderTabs();
+  t.model?.dispose();
+  renderProjectBar();
+  return true;
+}
+async function closeMany(rels) { for (const r of rels) if (!(await closeTab(r))) return false; return true; }
+function closeAll(force) {
+  if (!force) return closeMany([...tabs.keys()]);
+  closeCompare();
+  active = null;
+  for (const [, t] of tabs) t.model?.dispose();
+  tabs.clear();
+  activate(null);
+}
+function renderTabs() {
+  $('#tabs').replaceChildren(...[...tabs].map(([rel, t]) => {
+    const tab = el('div', 'tab' + (rel === active ? ' on' : '') + (isDirty(t) ? ' dirty' : '') + (t.preview ? ' preview' : ''));
+    tab.title = rel + (t.preview ? ' (preview)' : ''); tab.setAttribute('role', 'tab');
+    const x = el('button', 'ibtn x'); x.title = 'Close'; x.append(icon('close', 'c'), icon('circle-filled', 'd'));
+    x.onclick = e => { e.stopPropagation(); closeTab(rel); };
+    tab.append(fileIcon(base(rel)), el('span', 'tl', base(rel)), x);
+    tab.onclick = () => activate(rel);
+    tab.ondblclick = () => { t.preview = false; renderTabs(); };
+    // drag to reorder
+    tab.draggable = true;
+    tab.ondragstart = e => { e.dataTransfer.setData(DRAG_TAB, rel); e.dataTransfer.effectAllowed = 'move'; };
+    tab.ondragover = e => {
+      if (!e.dataTransfer.types.includes(DRAG_TAB)) return;
+      e.preventDefault();
+      const r = tab.getBoundingClientRect(), after = e.clientX > r.left + r.width / 2;
+      tab.classList.toggle('drop-before', !after); tab.classList.toggle('drop-after', after);
+    };
+    tab.ondragleave = e => { if (!tab.contains(e.relatedTarget)) tab.classList.remove('drop-before', 'drop-after'); };
+    tab.ondragend = () => $$('#tabs .tab').forEach(x => x.classList.remove('drop-before', 'drop-after'));
+    tab.ondrop = e => {
+      const from = e.dataTransfer.getData(DRAG_TAB), after = tab.classList.contains('drop-after');
+      tab.classList.remove('drop-before', 'drop-after');
+      if (!from) return;
+      e.preventDefault();
+      if (from === rel) return;
+      const keys = [...tabs.keys()].filter(k => k !== from);
+      keys.splice(keys.indexOf(rel) + (after ? 1 : 0), 0, from);
+      const entries = keys.map(k => [k, tabs.get(k)]);
+      tabs.clear(); entries.forEach(([k, v]) => tabs.set(k, v));
+      tabs.get(from).preview = false; // dragging pins, as in VS Code
+      renderTabs();
+    };
+    tab.onauxclick = e => { if (e.button === 1) { e.preventDefault(); closeTab(rel); } };
+    tab.oncontextmenu = e => {
+      e.preventDefault();
+      const keys = [...tabs.keys()], i = keys.indexOf(rel);
+      menu(e.clientX, e.clientY, [
+        { label: 'Close', key: K.close, run: () => closeTab(rel) },
+        { label: 'Close Others', disabled: keys.length < 2, run: () => closeMany(keys.filter(k => k !== rel)) },
+        { label: 'Close to the Right', disabled: i === keys.length - 1, run: () => closeMany(keys.slice(i + 1)) },
+        { label: 'Close Saved', run: () => closeMany(keys.filter(k => !isDirty(tabs.get(k)))) },
+        { label: 'Close All', run: () => closeMany(keys) },
+        '-',
+        { label: 'Copy Path', run: () => copy(absPath(rel)) },
+        { label: 'Copy Relative Path', run: () => copy(rel) },
+        { label: 'Reveal in Explorer View', run: () => { showView('explorer'); reveal(rel); } },
+      ]);
+    };
+    return tab;
+  }));
+  $('#tabs .tab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+// Mouse wheel scrolls the tab strip sideways, as in VS Code.
+$('#tabs').addEventListener('wheel', e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { $('#tabs').scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
+function renderCrumbs() {
+  const c = $('#crumbs');
+  if (!active) return c.replaceChildren();
+  const parts = active.split('/');
+  c.replaceChildren(...parts.flatMap((p, i) => {
+    const last = i === parts.length - 1;
+    const seg = el('span'); if (last) seg.append(fileIcon(p), ' '); seg.append(p);
+    return i ? [icon('chevron-right'), seg] : [seg];
+  }));
+}
+// Returns true once written. force = overwrite whatever is on disk.
+async function saveTab(rel, force = false) {
+  const t = tabs.get(rel);
+  if (!t) return false;
+  if (!isDirty(t) && !force) return true; // nothing to write (and nothing to conflict over)
+  if (!t.model) await ensureTabModel(rel, t);
+  const version = t.model.getAlternativeVersionId();
+  try {
+    const r = await api('/fs/file?path=' + enc(rel), { method: 'PUT', body: fileText(t), headers: force || !t.etag ? {} : { 'if-match': t.etag } });
+    t.etag = (await r.json()).etag;
+  } catch (e) {
+    if (e.status !== 412) throw e;
+    return saveConflict(rel);
+  }
+  t.saved = version; t.dirty = false; renderTabs(); renderProjectBar();
+  scheduleGitRefresh();
+  return true;
+}
+const save = () => (diff?.kind === 'conflict' && diff.rel === active ? keepMine() : active ? saveTab(active) : Promise.resolve());
+async function saveAll() { for (const [rel, t] of [...tabs]) if (isDirty(t) && !(await saveTab(rel))) return false; return true; }
+// Someone else (agent, git, another editor) changed the file after we loaded it. Never overwrite silently.
+async function saveConflict(rel) {
+  if (active !== rel) activate(rel);
+  const r = await modal(`Failed to save '${base(rel)}': The content of the file is newer.`,
+    'Compare your version with the file on disk, or overwrite the file with your changes.',
+    [{ label: 'Compare', value: 'compare', primary: true }, { label: 'Overwrite', value: 'overwrite' }, { label: 'Cancel', value: 'cancel' }]);
+  if (r === 'overwrite') return saveTab(rel, true);
+  if (r === 'compare') await openCompare(rel);
+  return false;
+}
+
+// ---------- compare with disk & git diff (side-by-side diff) ----------
+let diff = null; // { kind, rel, de, orig, mod?, etag?, box }
+async function openCompare(rel) {
+  const { text, etag } = await readFile(rel);
+  const t = tabs.get(rel);
+  if (!t) return;
+  closeCompare();
+  const orig = monaco.editor.createModel(text, t.model.getLanguageId());
+  const box = el('div'); box.id = 'diff';
+  const keep = el('button', 'btn', 'Overwrite with Mine'), take = el('button', 'btn sec', 'Use Disk Version'), x = el('button', 'ibtn');
+  keep.title = `Save your version over the file (${K.save})`; take.title = 'Discard your changes and load the file from disk';
+  x.title = 'Close'; x.append(icon('close'));
+  keep.onclick = () => keepMine().catch(fail); take.onclick = () => takeDisk(); x.onclick = () => closeCompare();
+  const bar = el('div', 'dbar');
+  bar.append(icon('diff'), el('span', 'dt', `${base(rel)} (on disk) ↔ ${base(rel)} (yours)`), el('span', 'dh', 'Edit the right side to merge, then save.'), el('span', 'sp'), take, keep, x);
+  const host = el('div', 'dhost');
+  box.append(bar, host); $('#edwrap').append(box);
+  const de = monaco.editor.createDiffEditor(host, { automaticLayout: true, originalEditable: false, fontFamily: editor.getRawOptions().fontFamily, fontSize: editor.getRawOptions().fontSize, wordWrap: prefs.wrap ? 'on' : 'off' });
+  de.setModel({ original: orig, modified: t.model });
+  diff = { kind: 'conflict', rel, de, orig, etag, box };
+  de.getModifiedEditor().focus();
+}
+function closeCompare() {
+  if (!diff) return;
+  const d = diff; diff = null;
+  d.de.dispose(); d.orig?.dispose(); d.mod?.dispose(); d.box.remove();
+  if (active === d.rel) editor.focus();
+}
+// Save against the disk version shown on the left; if it changed again meanwhile, the bridge refuses and we ask again.
+async function keepMine() {
+  if (!diff || diff.kind !== 'conflict') return;
+  const { rel, etag } = diff, t = tabs.get(rel);
+  t.etag = etag;
+  if (await saveTab(rel)) closeCompare();
+}
+function takeDisk() {
+  if (!diff || diff.kind !== 'conflict') return;
+  const { rel, etag, orig } = diff, t = tabs.get(rel), text = orig.getValue(monaco.editor.EndOfLinePreference.TextDefined, true);
+  closeCompare(); // first: a live diff view re-rendering the swapped model throws "Illegal value for lineNumber"
+  t.reloading = true; t.model.setValue(text); t.reloading = false;
+  t.saved = t.model.getAlternativeVersionId(); t.etag = etag; t.bom = text.charCodeAt(0) === 0xfeff;
+  renderTabs(); updateStatus();
+}
+// Re-read an open file that changed on disk (agent, git, another editor). Unsaved buffers are never touched.
+async function reloadFile(rel) {
+  const t = tabs.get(rel);
+  if (!t || !t.model || isDirty(t)) return;
+  let text, etag;
+  try { ({ text, etag } = await readFile(rel)); } catch { return; } // deleted or unreadable: keep the buffer
+  if (!tabs.has(rel) || isDirty(t)) return; // edited meanwhile
+  t.etag = etag;
+  if (text === fileText(t)) return; // our own save
+  const view = rel === active ? editor.saveViewState() : null;
+  t.reloading = true; t.model.setValue(text); t.reloading = false;
+  t.saved = t.model.getAlternativeVersionId(); t.bom = text.charCodeAt(0) === 0xfeff;
+  if (view) editor.restoreViewState(view); // keep cursor and scroll position
+  renderTabs();
+  if (rel === active) updateStatus();
+}
+async function reloadClean() { for (const rel of [...tabs.keys()]) await reloadFile(rel); }
+const langName = id => monaco.languages.getLanguages().find(l => l.id === id)?.aliases?.[0] ?? id;
+function updateStatus() {
+  $('#st-root').replaceChildren(icon(root ? 'folder' : 'folder-opened'), el('span', '', root ? base(root) : 'Open Folder'));
+  const m = active && editor?.getModel();
+  $('#st-pos').hidden = $('#st-lang').hidden = $('#st-eol').hidden = $('#st-enc').hidden = $('#st-indent').hidden = !m;
+  if (!m) return;
+  const o = m.getOptions(); // Monaco detects indentation per file
+  $('#st-indent').textContent = o.insertSpaces ? `Spaces: ${o.indentSize}` : `Tab Size: ${o.tabSize}`;
+  const p = editor.getPosition();
+  $('#st-pos').textContent = p ? `Ln ${p.lineNumber}, Col ${p.column}` : '';
+  $('#st-lang').textContent = langName(m.getLanguageId());
+  $('#st-eol').textContent = m.getEOL() === '\r\n' ? 'CRLF' : 'LF';
+  $('#st-enc').textContent = tabs.get(active)?.bom ? 'UTF-8 with BOM' : 'UTF-8';
+}
+const gotoLine = () => { const ed = diff?.rel === active ? diff.de.getModifiedEditor() : editor; ed.focus(); ed.getAction('editor.action.gotoLine')?.run(); };
+$('#st-pos').onclick = gotoLine;
+// Switch LF <-> CRLF (an undoable edit, so the tab turns dirty and Save writes it).
+function toggleEol() {
+  const m = active && editor.getModel();
+  if (!m) return;
+  m.pushEOL(m.getEOL() === '\r\n' ? monaco.editor.EndOfLineSequence.LF : monaco.editor.EndOfLineSequence.CRLF);
+  updateStatus(); renderTabs();
+}
+$('#st-eol').onclick = toggleEol;
+$('#st-indent').onclick = () => quickOpen('>Indent');
+function setIndent(spaces, size) {
+  const m = active && editor.getModel();
+  if (!m) return;
+  m.updateOptions(spaces ? { insertSpaces: true, indentSize: size, tabSize: size } : { insertSpaces: false, tabSize: size });
+  updateStatus();
+}
+function toggleWrap() {
+  prefs.wrap = !prefs.wrap;
+  const wordWrap = prefs.wrap ? 'on' : 'off';
+  editor.updateOptions({ wordWrap });
+  diff?.de.updateOptions({ wordWrap });
+  layout(); // saves prefs
+}
+
+// Global shortcuts; capture phase so they work inside Monaco and inputs too.
+addEventListener('keydown', e => {
+  if (!editor) return;
+  if ($('#menu') && e.key === 'Escape') { e.preventDefault(); return closeMenu(); }
+  const mod = isMac ? e.metaKey : e.ctrlKey, k = e.key.toLowerCase(), code = e.code;
+  const inTerm = !!document.activeElement?.closest('#panel'); // the shell owns ⌃W, Alt+letters etc. there
+  const action =
+    e.ctrlKey && !e.metaKey && !e.altKey && (code === 'Backquote' || e.key === '`' || e.key === '~') ? () => (e.shiftKey ? newTerminal().catch(fail) : toggleTerminal())
+    // In the terminal, Ctrl/Alt keys belong to the shell, except the few VS Code also keeps (save, quick open, palette, side bar, search).
+    : inTerm && (e.ctrlKey || e.altKey) && !(mod && (k === 's' || k === 'p' || k === 'b' || (e.shiftKey && k === 'f'))) ? null
+    : mod && e.altKey && code === 'KeyS' ? () => saveAll().catch(fail)
+    : mod && !e.shiftKey && !e.altKey && k === 's' ? () => save().catch(fail)
+    : mod && !e.shiftKey && k === 'o' ? () => openFolder().catch(fail)
+    : mod && !e.shiftKey && k === 'b' ? () => toggle('side')
+    : mod && !e.shiftKey && k === 'p' ? () => quickOpen('')
+    : (mod && e.shiftKey && k === 'p') || e.key === 'F1' ? () => quickOpen('>')
+    : mod && e.shiftKey && k === 'f' ? () => openSearch()
+    : mod && e.shiftKey && k === 'e' ? () => { showView('explorer'); $('#tree').focus(); }
+    : mod && e.shiftKey && k === 'x' ? () => openExtView()
+    : e.ctrlKey && e.shiftKey && !e.metaKey && k === 'g' ? () => openGitView()
+    : e.altKey && !mod && !e.shiftKey && code === 'KeyZ' ? () => toggleWrap()
+    : ((isMac && e.ctrlKey && !e.metaKey) || (!isMac && e.altKey && !e.ctrlKey)) && code === 'KeyW' ? () => { if (active) closeTab(active); }
+    : null;
+  if (!action) return;
+  e.preventDefault(); e.stopPropagation(); // also keeps the browser's print / save-page / open-file dialogs away
+  if ($('#qp').open || $('#qo').open || $('#modal').open || $('#gitdlg').open || $('#extdlg').open) return; // but don't act underneath an open dialog
+  action();
+}, true);
+addEventListener('beforeunload', e => {
+  if ([...tabs.values()].some(isDirty) || [...projects.values()].some(p => p.root !== root && p.tabs.some(t => t.dirty))) e.preventDefault();
+});
+
+// ---------- terminal panel (xterm.js; hibernated projects detach & dispose xterm.js to save browser RAM) ----------
+const terms = []; // { id, pty, name, line, attached, term?, fit?, box?, ctl? }
+let termOn = null;
+const TERM_THEME = { // OpenIDE Obsidian
+  background: '#0d0d12', foreground: '#d4d4e0', cursor: '#38bdf8', selectionBackground: '#6366f144',
+  black: '#000000', red: '#f87171', green: '#34d399', yellow: '#fbbf24', blue: '#60a5fa', magenta: '#c084fc', cyan: '#22d3ee', white: '#e5e5e5',
+  brightBlack: '#66667a', brightRed: '#fca5a5', brightGreen: '#6ee7b7', brightYellow: '#fde68a', brightBlue: '#93c5fd', brightMagenta: '#d8b4fe', brightCyan: '#67e8f9', brightWhite: '#ffffff',
+};
+function showPanel(on) {
+  $('#panel').hidden = $('#sash-panel').hidden = !on;
+  if (on) {
+    layout();
+    if (termOn && !termOn.attached) attachTerm(termOn);
+    requestAnimationFrame(() => { termOn?.fit?.fit(); termOn?.term?.focus(); });
+  } else if (active) editor.focus();
+}
+function toggleTerminal() {
+  if ($('#panel').hidden) { if (terms.length) showPanel(true); else newTerminal().catch(fail); } else showPanel(false);
+}
+function renderTerms() {
+  const many = terms.length > 1; // like VS Code: the list only appears once there is a choice
+  $('#terms').replaceChildren(...(many ? terms.map(x => {
+    const b = el('div', 'tt' + (x === termOn ? ' on' : '')); b.setAttribute('role', 'tab');
+    b.append(icon('terminal'), el('span', '', x.name));
+    b.onclick = () => focusTerm(x);
+    return b;
+  }) : []));
+}
+function attachTerm(x) {
+  if (x.attached) return;
+  const box = el('div'); box.style.visibility = 'hidden'; $('#termbody').append(box);
+  const term = new Terminal({ fontFamily: editor.getRawOptions().fontFamily, fontSize: 12, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, theme: TERM_THEME });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit); term.open(box); fit.fit();
+  Object.assign(x, { term, fit, box, ctl: new AbortController(), attached: true });
+  // Keystrokes go out in order, coalesced while a request is in flight.
+  let pend = '', busy = false;
+  const send = async s => {
+    pend += s; if (busy) return; busy = true;
+    while (pend) { const b = pend; pend = ''; try { await api(`/term/${x.id}/input`, { method: 'POST', body: b }); } catch { pend = ''; } }
+    busy = false;
+  };
+  term.onData(x.pty ? send : d => lineMode(x, d, send));
+  term.onResize(({ cols, rows }) => postJSON(`/term/${x.id}/resize`, { cols, rows }).catch(() => {}));
+  term.attachCustomKeyEventHandler(e => {
+    if (e.type !== 'keydown') return true;
+    if (isMac && e.metaKey && e.key === 'k') { term.clear(); return false; } // ⌘K clears, as in VS Code
+    if (!isMac && e.ctrlKey && !e.altKey && !e.shiftKey) { // Windows/Linux: Ctrl+C copies when text is selected, Ctrl+V pastes
+      if (e.key === 'c' && term.hasSelection()) { navigator.clipboard.writeText(term.getSelection()); term.clearSelection(); return false; }
+      if (e.key === 'v') return false; // leave it to the browser's paste event
+    }
+    return true;
+  });
+  readTerm(x);
+}
+function focusTerm(x) {
+  termOn = x;
+  if (!x.attached && !$('#panel').hidden) attachTerm(x);
+  for (const t of terms) if (t.attached) { t.box.hidden = t !== x; if (t === x) t.box.style.visibility = ''; }
+  renderTerms();
+  if (x.attached) requestAnimationFrame(() => { x.fit.fit(); x.term.focus(); });
+}
+async function newTerminal() {
+  if (!root) throw new Error('Open a folder first: the terminal starts in it.');
+  showPanel(true);
+  const box = el('div'); box.style.visibility = 'hidden'; $('#termbody').append(box);
+  const term = new Terminal({ fontFamily: editor.getRawOptions().fontFamily, fontSize: 12, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, theme: TERM_THEME });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit); term.open(box); fit.fit();
+  let r;
+  try { r = await (await postJSON('/term', { cols: term.cols, rows: term.rows })).json(); } catch (e) { term.dispose(); box.remove(); if (!terms.length) showPanel(false); throw e; }
+  const used = new Set(terms.map(t => t.name));
+  let name = r.name, k = 2;
+  while (used.has(name)) name = `${r.name} (${k++})`;
+  const x = { id: r.id, pty: r.pty, name, line: '', term, fit, box, ctl: new AbortController(), attached: true };
+  terms.push(x);
+  // Keystrokes go out in order, coalesced while a request is in flight.
+  let pend = '', busy = false;
+  const send = async s => {
+    pend += s; if (busy) return; busy = true;
+    while (pend) { const b = pend; pend = ''; try { await api(`/term/${x.id}/input`, { method: 'POST', body: b }); } catch { pend = ''; } }
+    busy = false;
+  };
+  term.onData(r.pty ? send : d => lineMode(x, d, send));
+  term.onResize(({ cols, rows }) => postJSON(`/term/${x.id}/resize`, { cols, rows }).catch(() => {}));
+  term.attachCustomKeyEventHandler(e => {
+    if (e.type !== 'keydown') return true;
+    if (isMac && e.metaKey && e.key === 'k') { term.clear(); return false; } // ⌘K clears, as in VS Code
+    if (!isMac && e.ctrlKey && !e.altKey && !e.shiftKey) { // Windows/Linux: Ctrl+C copies when text is selected, Ctrl+V pastes
+      if (e.key === 'c' && term.hasSelection()) { navigator.clipboard.writeText(term.getSelection()); term.clearSelection(); return false; }
+      if (e.key === 'v') return false; // leave it to the browser's paste event
+    }
+    return true;
+  });
+  focusTerm(x);
+  readTerm(x);
+}
+async function readTerm(x) {
+  try {
+    const r = await api(`/term/${x.id}/stream`, { signal: x.ctl.signal });
+    const rd = r.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await rd.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const d = buf.slice(0, i); buf = buf.slice(i + 2);
+        if (d.startsWith('data: ')) x.term.write(JSON.parse(d.slice(6)));
+      }
+    }
+  } catch { /* detached for hibernation, killed, or bridge gone */ }
+  if (x.ctl.signal.aborted) return; // detached for hibernation — keep backend PTY & term descriptor
+  dropTerm(x); // the shell exited (or the stream ended): close it, as VS Code does
+}
+function killTerm(x = termOn) {
+  if (!x) return;
+  if (x.attached) x.ctl.abort();
+  api('/term/' + x.id, { method: 'DELETE' }).catch(() => {});
+  dropTerm(x);
+}
+function dropTerm(x) {
+  const i = terms.indexOf(x);
+  if (i < 0) return;
+  terms.splice(i, 1);
+  if (x.attached) { x.term.dispose(); x.box.remove(); }
+  if (termOn === x) termOn = null;
+  if (terms.length) { if (!termOn) focusTerm(terms[Math.min(i, terms.length - 1)]); else renderTerms(); } else showPanel(false);
+}
+// Windows has no pty here, just cmd.exe over pipes: edit the line locally and send it on Enter. cmd echoes it back after its prompt.
+// ponytail: no arrows/history/tab completion and Ctrl+C only clears the line; a ConPTY addon would lift all of this.
+function lineMode(x, d, send) {
+  if (d.startsWith('\x1b')) return; // arrow keys and other escape sequences
+  for (const ch of d.replace(/\r\n|\n/g, '\r')) {
+    if (ch === '\r') { const n = [...x.line || ''].length; x.term.write(n ? `\x1b[${n}D\x1b[K` : ''); send((x.line || '') + '\r\n'); x.line = ''; }
+    else if (ch === '\x7f') { if (x.line) { x.line = [...x.line].slice(0, -1).join(''); x.term.write('\b \b'); } }
+    else if (ch === '\x03') { x.term.write('^C'); x.line = ''; send('\r\n'); }
+    else if (ch >= ' ') { x.line = (x.line || '') + ch; x.term.write(ch); }
+  }
+}
+new ResizeObserver(() => { if (!$('#panel').hidden) termOn?.fit.fit(); }).observe($('#termbody'));
+$('#term-new').onclick = () => newTerminal().catch(fail);
+$('#term-kill').onclick = () => killTerm();
+$('#panel-close').onclick = () => showPanel(false);
+$('#term-new').title = `New Terminal (${K.newTerm})`; $('#panel-close').title = `Hide Panel (${K.term})`;
+
+// ---------- modal dialog ----------
+// Buttons are listed in Windows order (primary first); macOS puts the primary button on the right.
+function modal(title, detail, buttons) {
+  const d = $('#modal');
+  if (d.open) return Promise.resolve('cancel');
+  $('#md-title').textContent = title;
+  $('#md-detail').textContent = detail || ''; $('#md-detail').hidden = !detail;
+  return new Promise(ok => {
+    const done = v => { d.oncancel = null; if (d.open) d.close(); ok(v); };
+    const btns = buttons.map(b => { const x = el('button', b.primary ? 'btn' : 'btn sec', b.label); x.onclick = () => done(b.value); return x; });
+    $('#md-buttons').replaceChildren(...(isMac ? btns.reverse() : btns));
+    d.oncancel = e => { e.preventDefault(); done('cancel'); }; // Esc
+    d.showModal();
+    $('#md-buttons .btn:not(.sec)')?.focus();
+  });
+}
+
+// ---------- context menu ----------
+function closeMenu() { $('#menu')?.remove(); }
+function menu(x, y, items) {
+  closeMenu();
+  const m = el('div'); m.id = 'menu'; m.setAttribute('role', 'menu'); m.tabIndex = -1;
+  for (const it of items) {
+    if (it === '-') { m.append(el('div', 'ms')); continue; }
+    const b = el('button', 'mi'); b.setAttribute('role', 'menuitem'); b.disabled = !!it.disabled;
+    b.append(el('span', '', it.label), el('span', 'mk', it.key || ''));
+    b.onclick = () => { closeMenu(); Promise.resolve().then(it.run).catch(fail); };
+    m.append(b);
+  }
+  document.body.append(m);
+  const r = m.getBoundingClientRect(); // keep it on screen
+  m.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 4)) + 'px';
+  m.style.top = Math.max(4, Math.min(y, innerHeight - r.height - 4)) + 'px';
+  const btns = [...m.querySelectorAll('.mi:not(:disabled)')];
+  m.focus();
+  m.onkeydown = e => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); return closeMenu(); }
+    if (e.key === 'Tab') return closeMenu();
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault();
+    const i = btns.indexOf(document.activeElement);
+    const j = e.key === 'Home' ? 0 : e.key === 'End' ? btns.length - 1
+      : i < 0 ? (e.key === 'ArrowDown' ? 0 : btns.length - 1) : (i + (e.key === 'ArrowDown' ? 1 : -1) + btns.length) % btns.length;
+    btns[j]?.focus();
+  };
+}
+addEventListener('pointerdown', e => { if (!e.target.closest?.('#menu')) closeMenu(); }, true);
+addEventListener('blur', closeMenu);
+addEventListener('resize', closeMenu);
+
+const sepOf = () => (root?.includes('\\') ? '\\' : '/');
+const absPath = rel => root + sepOf() + rel.replaceAll('/', sepOf());
+async function copy(text) {
+  try { await navigator.clipboard.writeText(text); } catch { toast('Could not access the clipboard.', 'warn'); }
+}
+
+// ---------- explorer: reveal, rename, delete, keyboard, context menu ----------
+// Expand the folders above a file and select it (VS Code's explorer.autoReveal).
+function reveal(rel) {
+  if (!root || !rel) return Promise.resolve();
+  return treeQueue(async () => {
+    const parts = rel.split('/');
+    let changed = false;
+    for (let i = 1; i < parts.length; i++) { const p = parts.slice(0, i).join('/'); if (!expanded.has(p)) { expanded.add(p); changed = true; } }
+    if (changed || !$(`#tree .row[data-rel="${CSS.escape(rel)}"]`)) await drawTree();
+    select(rel, false);
+    $(`#tree .row[data-rel="${CSS.escape(rel)}"]`)?.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+// Windows treats "\" as a separator too; elsewhere it is a legal filename character.
+const normName = v => (isWin ? v.replace(/\\/g, '/') : v).trim().replace(/^\/+|\/+$/g, '');
+function badName(name) {
+  if (/(^|\/)\.\.?($|\/)/.test(name)) return 'A name cannot contain "." or ".." segments.';
+  if (isWin && /[<>:"|?*]/.test(name)) return 'A name cannot contain any of these characters: < > : " | ? *';
+  if (isWin && /(^|\/)(con|prn|aux|nul|com\d|lpt\d)(\.[^/]*)?($|\/)/i.test(name)) return `"${name}" is a reserved name on Windows.`;
+  if (isWin && /[ .]($|\/)/.test(name)) return 'On Windows a name cannot end with a space or a dot.';
+  return '';
+}
+
+// After a rename, carry open editors (and their unsaved edits), expanded folders and history over to the new paths.
+function moved(from, to) {
+  const re = k => (k === from ? to : k.startsWith(from + '/') ? to + k.slice(from.length) : k);
+  if (active && tabs.has(active)) tabs.get(active).view = editor.saveViewState();
+  const entries = [...tabs], old = [], wasActive = active;
+  tabs.clear();
+  for (const [k, t] of entries) {
+    const nk = re(k);
+    if (nk === k) { tabs.set(k, t); continue; }
+    if (!t.model) { tabs.set(nk, t); continue; }
+    const n = newModel(nk, fileText(t)); // new URI, so the language follows a changed extension
+    n.view = t.view; n.bom = t.bom; n.preview = t.preview; n.etag = t.etag;
+    if (isDirty(t)) n.saved = -1; // still unsaved
+    tabs.set(nk, n); old.push(t.model);
+  }
+  for (const k of [...expanded]) { const nk = re(k); if (nk !== k) { expanded.delete(k); expanded.add(nk); } }
+  recent.forEach((r, i) => { recent[i] = re(r); });
+  active = null;
+  activate(wasActive ? re(wasActive) : null, { noReveal: true }); // the explorer keeps the renamed item selected
+  old.forEach(m => m.dispose()); // only after the editor has switched away from them
+}
+
+function renameEntry(rel) {
+  return treeQueue(async () => {
+    const row = $(`#tree .row[data-rel="${CSS.escape(rel)}"]`);
+    const label = row?.querySelector('.name');
+    if (!label) return;
+    const old = base(rel), parent = rel.split('/').slice(0, -1).join('/'), isDir = !!row.dataset.dir;
+    const input = el('input'); input.value = old; input.setAttribute('aria-label', 'New name');
+    label.replaceWith(input); row.classList.add('renaming');
+    input.focus();
+    const dot = old.lastIndexOf('.');
+    input.setSelectionRange(0, isDir || dot <= 0 ? old.length : dot); // select the name without its extension
+    let busy = false;
+    const restore = () => { if (!busy && input.isConnected) { input.onblur = null; input.replaceWith(label); row.classList.remove('renaming', 'bad'); } };
+    input.onblur = () => setTimeout(() => { if (document.activeElement !== input) restore(); });
+    input.onclick = input.onmousedown = e => e.stopPropagation(); // don't open/toggle the row underneath
+    input.oninput = () => row.classList.remove('bad');
+    input.onkeydown = e => {
+      e.stopPropagation(); // keep explorer keyboard navigation out of the text box
+      if (composing(e)) return;
+      if (e.key === 'Escape') { e.preventDefault(); return restore(); }
+      if (e.key !== 'Enter' || busy) return;
+      e.preventDefault();
+      const name = normName(input.value);
+      if (!name || name === old) return restore();
+      const bad = badName(name);
+      if (bad) { row.classList.add('bad'); return toast(bad, 'warn'); }
+      const to = parent ? parent + '/' + name : name;
+      busy = true;
+      treeQueue(async () => {
+        try { await postJSON('/fs/rename', { from: rel, to }); }
+        catch (err) {
+          busy = false; row.classList.add('bad'); input.focus();
+          return toast(err.status === 409 ? `A file or folder named "${name}" already exists here. Choose a different name.` : err.message, 'error');
+        }
+        input.onblur = null;
+        to.split('/').slice(0, -1).reduce((acc, seg) => { const p = acc ? acc + '/' + seg : seg; expanded.add(p); return p; }, '');
+        selected = { rel: to, dir: isDir };
+        moved(rel, to);
+        await drawTree();
+        $('#tree').focus();
+      });
+    };
+  });
+}
+
+async function deleteEntry(rel, isDir) {
+  const r = await modal(`Are you sure you want to delete '${base(rel)}'${isDir ? ' and its contents' : ''}?`, `You can restore it from the ${TRASH}.`,
+    [{ label: `Move to ${TRASH}`, value: 'ok', primary: true }, { label: 'Cancel', value: 'cancel' }]);
+  if (r !== 'ok') return;
+  await postJSON('/fs/delete', { path: rel });
+  const gone = k => k === rel || k.startsWith(rel + '/');
+  // Unsaved editors stay open (Save recreates the file); clean ones close.
+  for (const k of [...tabs.keys()]) if (gone(k) && !isDirty(tabs.get(k))) closeTab(k, true);
+  for (const k of [...expanded]) if (gone(k)) expanded.delete(k);
+  if (selected && gone(selected.rel)) selected = null;
+  await renderTree();
+  $('#tree').focus();
+}
+
+const rowInfo = row => (row ? { rel: row.dataset.rel, dir: !!row.dataset.dir } : null);
+$('#tree').addEventListener('contextmenu', e => {
+  const row = e.target.closest('.row');
+  if (row?.classList.contains('edit') || row?.classList.contains('renaming')) return; // native menu inside text boxes
+  e.preventDefault();
+  const it = rowInfo(row);
+  select(it?.rel ?? null, it?.dir ?? false);
+  menu(e.clientX, e.clientY, [
+    { label: 'New File…', run: () => newEntry('file') },
+    { label: 'New Folder…', run: () => newEntry('folder') },
+    '-',
+    ...(it ? [
+      ...(it.dir ? [] : [{ label: 'Open', run: () => openFile(it.rel) }]),
+      { label: 'Copy Path', run: () => copy(absPath(it.rel)) },
+      { label: 'Copy Relative Path', run: () => copy(it.rel) },
+      '-',
+      { label: 'Rename…', key: K.rename, run: () => renameEntry(it.rel) },
+      { label: 'Delete', key: K.del, run: () => deleteEntry(it.rel, it.dir) },
+    ] : [
+      { label: 'Refresh', run: renderTree },
+      { label: 'Collapse Folders', run: () => { expanded.clear(); return renderTree(); } },
+    ]),
+  ]);
+});
+// Keyboard: ↑↓ move, → expand / ← collapse or go to parent, Enter/Space open, F2 rename, Delete (⌘⌫ on macOS).
+$('#tree').addEventListener('keydown', e => {
+  if (e.target !== $('#tree')) return; // inline inputs handle their own keys
+  const rows = $$('#tree .row').filter(r => !r.classList.contains('edit') && r.offsetParent);
+  const i = rows.findIndex(r => r.classList.contains('sel')), row = rows[i], it = rowInfo(row);
+  const go = j => { const r = rows[Math.max(0, Math.min(rows.length - 1, j))]; if (r) { select(r.dataset.rel, !!r.dataset.dir); r.scrollIntoView({ block: 'nearest' }); } };
+  const take = fn => { e.preventDefault(); fn(); };
+  if (e.key === 'ArrowDown') take(() => go(i + 1));
+  else if (e.key === 'ArrowUp') take(() => go(i < 0 ? 0 : i - 1));
+  else if (e.key === 'Home') take(() => go(0));
+  else if (e.key === 'End') take(() => go(rows.length - 1));
+  else if (!it) return;
+  else if (e.key === 'ArrowRight') take(() => { if (it.dir) expanded.has(it.rel) ? go(i + 1) : row.click(); });
+  else if (e.key === 'ArrowLeft') take(() => {
+    if (it.dir && expanded.has(it.rel)) return row.click();
+    const parent = it.rel.split('/').slice(0, -1).join('/');
+    if (parent) go(rows.findIndex(r => r.dataset.rel === parent));
+  });
+  else if (e.key === 'Enter' || e.key === ' ') take(() => (it.dir ? row.click() : openFile(it.rel).catch(fail)));
+  else if (e.key === 'F2') take(() => renameEntry(it.rel));
+  else if (e.key === 'Delete' || (isMac && e.metaKey && e.key === 'Backspace')) take(() => deleteEntry(it.rel, it.dir).catch(fail));
+});
+
+// ---------- explorer drag & drop: move files and folders ----------
+let dragHover = null, dragTimer = null;
+// Drop target folder for the row under the pointer ('' = workspace root); a file row means its folder.
+const dropTarget = e => {
+  const t = e.target.nodeType === 3 ? e.target.parentElement : e.target;
+  const row = t?.closest?.('#tree .row');
+  if (!row) return '';
+  return row.dataset.dir ? row.dataset.rel : row.dataset.rel.split('/').slice(0, -1).join('/');
+};
+function markDrop(target) {
+  $$('#tree .drop').forEach(x => x.classList.remove('drop'));
+  dragHover = target;
+  if (target == null) return;
+  (target ? $(`#tree .row[data-rel="${CSS.escape(target)}"]`)?.parentElement : $('#tree'))?.classList.add('drop');
+}
+$('#tree').addEventListener('dragover', e => {
+  if (!e.dataTransfer.types.includes(DRAG_PATH)) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+  const target = dropTarget(e);
+  if (target === dragHover) return;
+  markDrop(target);
+  clearTimeout(dragTimer);
+  const row = target && $(`#tree .row[data-rel="${CSS.escape(target)}"]`);
+  if (row && !expanded.has(target)) dragTimer = setTimeout(() => row.click(), 700); // hovering opens a folder
+});
+$('#tree').addEventListener('dragleave', e => { if (!$('#tree').contains(e.relatedTarget)) { clearTimeout(dragTimer); markDrop(null); } });
+$('#tree').addEventListener('dragend', () => { clearTimeout(dragTimer); markDrop(null); });
+$('#tree').addEventListener('drop', async e => {
+  const from = e.dataTransfer.getData(DRAG_PATH);
+  if (!from) return;
+  e.preventDefault();
+  const target = dropTarget(e), isDir = dragDir;
+  clearTimeout(dragTimer); markDrop(null);
+  const to = target ? target + '/' + base(from) : base(from);
+  if (to === from || target === from || target.startsWith(from + '/')) return; // same folder, or into itself
+  const ok = await modal(`Are you sure you want to move '${base(from)}' into '${target ? base(target) : base(root)}'?`, '',
+    [{ label: 'Move', value: 'ok', primary: true }, { label: 'Cancel', value: 'cancel' }]);
+  if (ok !== 'ok') return;
+  treeQueue(async () => {
+    try { await postJSON('/fs/rename', { from, to }); }
+    catch (err) { return toast(err.status === 409 ? `'${base(from)}' already exists in '${target ? base(target) : base(root)}'.` : err.message, 'error'); }
+    if (target) expanded.add(target);
+    selected = { rel: to, dir: isDir };
+    moved(from, to);
+    await drawTree();
+  });
+});
+
+// ---------- live refresh: the bridge streams file-system changes ----------
+let watchCtl = null, diskTimer = null, structural = false;
+const diskChanged = new Set();
+async function watchRoot() {
+  watchCtl?.abort();
+  clearTimeout(diskTimer); diskChanged.clear(); structural = false;
+  if (!root) return;
+  const ctl = watchCtl = new AbortController();
+  try {
+    const r = await fetch('/fs/watch', { headers: { authorization: 'Bearer ' + token }, signal: ctl.signal });
+    if (!r.ok) return;
+    const rd = r.body.getReader(), dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await rd.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const d = buf.slice(0, i); buf = buf.slice(i + 2);
+        if (d.startsWith('data: ')) onDiskChange(JSON.parse(d.slice(6)));
+      }
+    }
+  } catch { /* aborted (folder switched) or bridge gone; the heartbeat reports the latter */ }
+}
+function onDiskChange(events) {
+  for (const [rel, type] of events) { diskChanged.add(rel); if (type === 'rename') structural = true; } // rename = created/deleted/moved
+  clearTimeout(diskTimer);
+  diskTimer = setTimeout(flushDisk, 200);
+}
+function flushDisk() {
+  // Never redraw the tree under an inline name box; try again shortly.
+  if ($('#tree .row.edit, #tree .row.renaming')) { diskTimer = setTimeout(flushDisk, 1000); return; }
+  const rels = [...diskChanged]; diskChanged.clear();
+  if (structural) { structural = false; renderTree(); }
+  rels.filter(r => tabs.has(r)).forEach(r => reloadFile(r));
+  scheduleGitRefresh();
+}
+
+// ---------- Search view (Find in Files) ----------
+const sr = { case: false, word: false, regex: false, seq: 0, timer: null, collapsed: new Set(), last: null };
+function openSearch() {
+  showView('search');
+  const inp = $('#sr-q');
+  const s = active && editor.getModel()?.getValueInRange(editor.getSelection()); // seed with the editor selection
+  if (s && !s.includes('\n')) { inp.value = s; runSearch(); }
+  inp.focus(); inp.select();
+}
+async function runSearch() {
+  clearTimeout(sr.timer);
+  const q = $('#sr-q').value, n = ++sr.seq;
+  if (!q) { sr.last = null; $('#sr-res').replaceChildren(); $('#sr-msg').textContent = ''; return; }
+  if (!root) { $('#sr-msg').textContent = 'Open a folder to search its files.'; return; }
+  $('#sr-msg').textContent = 'Searching…';
+  let r;
+  try { r = await getJSON(`/fs/search?q=${enc(q)}&case=${+sr.case}&word=${+sr.word}&regex=${+sr.regex}`); }
+  catch (e) { if (n === sr.seq) { sr.last = null; $('#sr-res').replaceChildren(); $('#sr-msg').textContent = e.message; } return; }
+  if (n !== sr.seq) return; // a newer search is on its way
+  sr.last = r; sr.collapsed.clear();
+  renderResults();
+}
+function renderResults() {
+  const r = sr.last;
+  if (!r) return;
+  const count = r.results.reduce((a, f) => a + f.matches.length, 0), files = r.results.length;
+  $('#sr-msg').textContent = !count ? 'No results found.' :
+    `${count} result${count > 1 ? 's' : ''} in ${files} file${files > 1 ? 's' : ''}${r.truncated ? ' (only the first 2,000 are shown)' : ''}`;
+  $('#sr-res').replaceChildren(...r.results.flatMap(({ file, matches }) => {
+    const open = !sr.collapsed.has(file);
+    const fr = el('div', 'row sr-file'); fr.title = file;
+    fr.append(icon(open ? 'chevron-down' : 'chevron-right', 'tw'), fileIcon(base(file)), el('span', 'name', base(file)),
+      el('span', 'qdesc', file.split('/').slice(0, -1).join('/')), el('span', 'badge', matches.length));
+    fr.onclick = () => { open ? sr.collapsed.add(file) : sr.collapsed.delete(file); renderResults(); };
+    if (!open) return [fr];
+    return [fr, ...matches.map(m => {
+      const row = el('div', 'row sr-match'), start = m.col - 1 - m.off; // match position inside the preview text
+      const lead = Math.min(m.text.match(/^\s*/)[0].length, start); // drop indentation, like VS Code
+      let pre = m.text.slice(lead, start);
+      if (pre.length > 40) pre = '…' + pre.slice(-30); // keep the hit visible in a narrow side bar
+      const pv = el('span', 'pv');
+      pv.append(pre, el('mark', '', m.text.slice(start, start + m.len)), m.text.slice(start + m.len));
+      row.append(pv); row.title = `${file}:${m.line}:${m.col}`;
+      row.onclick = () => {
+        $$('#sr-res .row.sel').forEach(x => x.classList.remove('sel')); row.classList.add('sel');
+        openAt(file, m).catch(fail);
+      };
+      return row;
+    })];
+  }));
+}
+async function openAt(file, m) {
+  await openFile(file, { preview: true });
+  if (active !== file) return;
+  const range = new monaco.Range(m.line, m.col, m.line, m.col + m.len);
+  editor.setSelection(range);
+  editor.revealRangeInCenterIfOutsideViewport(range);
+}
+$('#sr-q').oninput = () => { clearTimeout(sr.timer); sr.timer = setTimeout(runSearch, 300); }; // search as you type
+$('#sr-q').onkeydown = e => { if (e.key === 'Enter' && !composing(e)) { e.preventDefault(); runSearch(); } };
+for (const k of ['case', 'word', 'regex']) {
+  $('#sr-' + k).onclick = () => {
+    sr[k] = !sr[k];
+    $('#sr-' + k).classList.toggle('on', sr[k]); $('#sr-' + k).setAttribute('aria-pressed', sr[k]);
+    $('#sr-q').focus(); runSearch();
+  };
+}
+$('#sr-refresh').onclick = runSearch;
+$('#sr-clear').onclick = () => { $('#sr-q').value = ''; runSearch(); $('#sr-q').focus(); };
+$('#sr-collapse').onclick = () => { (sr.last?.results || []).forEach(f => sr.collapsed.add(f.file)); renderResults(); };
+
+// ---------- Go to File / Command Palette (one quick input; a leading ">" switches to commands) ----------
+const qo = { files: [], truncated: false, items: [], active: 0, loaded: false, loading: false };
+// Subsequence match: consecutive letters and word starts score higher.
+function fuzzy(q, s) {
+  const t = s.toLowerCase(), pos = [];
+  let i = 0, score = 0, last = -2;
+  for (let j = 0; j < t.length && i < q.length; j++) {
+    if (t[j] !== q[i]) continue;
+    score += j === last + 1 ? 5 : 1;
+    if (j === 0 || '/._- '.includes(s[j - 1])) score += 3;
+    pos.push(j); last = j; i++;
+  }
+  return i === q.length ? { score, pos } : null;
+}
+function hl(text, pos) {
+  const s = el('span'), set = new Set(pos);
+  let buf = '';
+  for (let i = 0; i < text.length; i++) {
+    if (!set.has(i)) { buf += text[i]; continue; }
+    if (buf) s.append(buf);
+    buf = ''; s.append(el('mark', '', text[i]));
+  }
+  if (buf) s.append(buf);
+  return s;
+}
+const COMMANDS = () => [
+  { label: 'View: Show Home', run: () => showHome(true) },
+  { label: 'File: Open Folder…', key: K.open, run: openFolder },
+  { label: 'Go to File…', key: K.quick, run: () => quickOpen('') },
+  { label: 'File: New File…', run: () => newEntry('file') },
+  { label: 'File: New Folder…', run: () => newEntry('folder') },
+  { label: 'File: Save', key: K.save, run: save },
+  { label: 'File: Save All', key: K.saveAll, run: saveAll },
+  { label: 'View: Close Editor', key: K.close, run: () => active && closeTab(active) },
+  { label: 'View: Close All Editors', run: () => closeMany([...tabs.keys()]) },
+  { label: 'View: Toggle Primary Side Bar Visibility', key: K.side, run: () => toggle('side') },
+  { label: 'View: Toggle Chat', run: () => toggle('chat') },
+  { label: 'File: Reveal Active File in Explorer View', run: () => { showView('explorer'); return reveal(active); } },
+  { label: 'Explorer: Refresh', run: renderTree },
+  { label: 'Explorer: Collapse Folders', run: () => { expanded.clear(); return renderTree(); } },
+  { label: 'Go to Line/Column…', key: K.line, run: gotoLine },
+  { label: 'Change End of Line Sequence (LF / CRLF)', run: toggleEol },
+  { label: 'Search: Find in Files', key: K.find, run: () => openSearch() },
+  { label: 'View: Show Explorer', key: K.explorer, run: () => showView('explorer') },
+  { label: 'View: Show Source Control', key: K.git, run: openGitView },
+  { label: 'View: Show Extensions', key: K.ext, run: openExtView },
+  { label: 'Preferences: Color Theme', run: () => quickOpen('', 'theme') },
+  ...getExtCommands(),
+  { label: 'Git: Clone from GitHub…', run: () => openGitDialog('clone') },
+  { label: 'Git: Connect GitHub Remote…', run: () => openGitDialog('remote') },
+  { label: 'Git: Checkout / Create Branch…', run: gitBranchPicker },
+  { label: 'Git: Pull', run: () => gitOp('/git/pull', {}, 'Pulled from remote.') },
+  { label: 'Git: Push', run: () => gitOp('/git/push', {}, 'Pushed to GitHub.') },
+  { label: 'Git: Fetch', run: () => gitOp('/git/fetch', {}, 'Fetched remote updates.') },
+  { label: 'Git: Initialize Repository', run: () => gitOp('/git/init', {}, 'Initialized Git repository.') },
+  { label: 'View: Toggle Word Wrap', key: K.wrap, run: toggleWrap },
+  { label: 'View: Toggle Terminal', key: K.term, run: toggleTerminal },
+  { label: 'Terminal: Create New Terminal', key: K.newTerm, run: newTerminal },
+  { label: 'Terminal: Kill the Active Terminal Instance', run: () => killTerm() },
+  { label: 'Terminal: Clear', run: () => termOn?.term.clear() },
+  ...[2, 4, 8].map(n => ({ label: `Indent Using Spaces: ${n}`, run: () => setIndent(true, n) })),
+  ...[2, 4, 8].map(n => ({ label: `Indent Using Tabs: Tab Size ${n}`, run: () => setIndent(false, n) })),
+  { label: 'Convert Indentation to Spaces', run: () => editor.getAction('editor.action.indentationToSpaces')?.run().then(updateStatus) },
+  { label: 'Convert Indentation to Tabs', run: () => editor.getAction('editor.action.indentationToTabs')?.run().then(updateStatus) },
+];
+async function ensureQoFiles() {
+  if (!root || qo.loaded || qo.loading) return;
+  qo.loading = true;
+  const openRoot = root;
+  try {
+    const d = await getJSON('/fs/files');
+    if (root === openRoot) { Object.assign(qo, d); qo.loaded = true; }
+  } catch (e) { fail(e); }
+  qo.loading = false;
+  if ($('#qo').open && !$('#qoin').value.startsWith('>')) qoRender();
+}
+async function quickOpen(prefix, mode = 'default') {
+  const d = $('#qo'), inp = $('#qoin');
+  qo.loaded = false; qo.mode = mode;
+  // Blur any focused trigger button so close() focus restoration never re-activates it.
+  if (!d.open) { document.activeElement?.blur?.(); d.showModal(); }
+  inp.value = prefix; inp.focus();
+  qoRender();
+  if (mode === 'default' && root && !prefix.startsWith('>')) await ensureQoFiles();
+}
+function qoRender() {
+  const v = $('#qoin').value;
+  let rows = [], msg = '';
+  if (qo.mode === 'branch') {
+    const q = v.trim(), ql = q.toLowerCase();
+    const list = gitState?.branches || [];
+    rows = list.filter(b => b.toLowerCase().includes(ql)).map(b => ({
+      label: b === gitState.branch ? `${b} (current)` : b,
+      pos: [],
+      run: () => gitOp('/git/checkout', { branch: b }, `Switched to ${b}`),
+    }));
+    if (q && !list.includes(q)) rows.push({ label: `+ Create branch "${q}"`, pos: [], run: () => gitOp('/git/checkout', { branch: q, create: true }, `Created & switched to ${q}`) });
+    if (!rows.length) msg = 'Type a branch name to create one.';
+  } else if (qo.mode === 'theme') {
+    const q = v.trim().toLowerCase();
+    const list = [{ key: 'default', label: 'OpenIDE Obsidian (Default)' }, ...listAvailableThemes()];
+    rows = list.filter(t => !q || t.label.toLowerCase().includes(q)).map(t => ({
+      label: activeThemeKey === t.key ? `${t.label} (current)` : t.label,
+      pos: [],
+      run: () => (t.key === 'default' ? restoreDefaultTheme(true) : applyThemeByKey(t.key, true)),
+    }));
+    if (!rows.length) msg = 'No matching color themes installed.';
+  } else if (v.startsWith('>')) {
+    const q = v.slice(1).trim().toLowerCase();
+    rows = COMMANDS().map(c => ({ ...c, m: q ? fuzzy(q, c.label) : { score: 0, pos: [] } })).filter(c => c.m)
+      .sort((a, b) => b.m.score - a.m.score).map(c => ({ ...c, pos: c.m.pos }));
+    if (!rows.length) msg = 'No matching commands';
+  } else if (!root) msg = 'Open a folder to search its files.';
+  else {
+    if (!qo.loaded) ensureQoFiles();
+    const q = v.trim().toLowerCase().replace(/\\/g, '/');
+    if (!q) {
+      const rec = recent.filter(r => tabs.has(r) || qo.files.includes(r));
+      rows = [...new Set([...rec, ...qo.files])].slice(0, 50).map((file, i) => ({ file, pos: [], sep: i === 0 && rec.length ? 'recently opened' : i === rec.length && rec.length ? 'files' : '' }));
+    } else {
+      for (const file of qo.files) {
+        const off = file.length - base(file).length;
+        let m = fuzzy(q, base(file));
+        if (m) { m.score += 20; m.pos = m.pos.map(p => p + off); } else m = fuzzy(q, file); // prefer hits in the file name
+        if (m) rows.push({ file, pos: m.pos, score: m.score - file.length * 0.01 });
+      }
+      rows = rows.sort((a, b) => b.score - a.score).slice(0, 50);
+      if (!rows.length) msg = qo.loading ? 'Loading files…' : 'No matching results';
+    }
+    if (qo.truncated && !msg) msg = 'Only the first 20,000 files are searched.';
+  }
+  qo.items = rows;
+  $('#qolist').replaceChildren(...rows.flatMap((r, k) => {
+    const row = el('div', 'qi'); row.setAttribute('role', 'option');
+    if (r.file) {
+      const name = base(r.file), off = r.file.length - name.length;
+      row.append(fileIcon(name), hl(name, r.pos.filter(p => p >= off).map(p => p - off)), el('span', 'qdesc', r.file.slice(0, Math.max(0, off - 1))));
+    } else {
+      row.append(hl(r.label, r.pos));
+      if (r.key) { const kk = el('span', 'qk'); kk.append(...keyCaps(r.key)); row.append(kk); }
+    }
+    row.onclick = () => qoPick(k);
+    row.onmousemove = () => { if (qo.active !== k) qoSetActive(k); };
+    return r.sep ? [el('div', 'qsep', r.sep), row] : [row];
+  }));
+  qoSetActive(0);
+  $('#qomsg').textContent = msg; $('#qomsg').hidden = !msg;
+}
+function qoSetActive(k) {
+  qo.active = k;
+  const rows = $$('#qolist .qi');
+  rows.forEach((r, i) => r.classList.toggle('on', i === k));
+  rows[k]?.scrollIntoView({ block: 'nearest' });
+}
+function qoClose() { if ($('#qo').open) $('#qo').close(); }
+function qoPick(k) {
+  const it = qo.items[k];
+  if (!it) return;
+  qoClose();
+  if (it.file) openFile(it.file).catch(fail);
+  else Promise.resolve().then(it.run).catch(fail);
+}
+$('#qoin').oninput = qoRender;
+$('#qo').addEventListener('keydown', e => {
+  if (composing(e)) return;
+  const n = qo.items.length;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (n) qoSetActive((qo.active + (e.key === 'ArrowDown' ? 1 : -1) + n) % n); }
+  else if (e.key === 'Enter') {
+    e.preventDefault(); e.stopPropagation();
+    const idx = qo.active;
+    // Defer closing until after the current key event finishes so restored focus never triggers an opener button.
+    setTimeout(() => qoPick(idx), 0);
+  }
+});
+$('#qo').addEventListener('cancel', e => { e.preventDefault(); qoClose(); });
+lightDismiss($('#qo'), qoClose);
+
+// ---------- Source Control (local git bridged to GitHub, no login/auth gate) ----------
+let gitState = null, gitCommits = [], gitSeq = 0, gitTimer = null;
+const gitCollapsed = new Set();
+function scheduleGitRefresh(delay = 150) {
+  clearTimeout(gitTimer);
+  gitTimer = setTimeout(() => refreshGit().catch(() => {}), delay);
+}
+function openGitView() { showView('git'); refreshGit().catch(fail); }
+async function refreshGit() {
+  const seq = ++gitSeq;
+  if (!root) {
+    gitState = null; gitCommits = [];
+    renderGit();
+    return;
+  }
+  const st = await getJSON('/git/status');
+  if (seq !== gitSeq) return;
+  gitState = st;
+  gitCommits = st.isRepo ? await getJSON('/git/log?limit=15').catch(() => []) : [];
+  if (seq !== gitSeq) return;
+  renderGit();
+}
+function renderGit() {
+  const st = gitState;
+  const total = st?.isRepo ? st.staged.length + st.unstaged.length : 0;
+  $('#git-badge').textContent = total > 99 ? '99+' : String(total);
+  $('#git-badge').hidden = !total;
+  $('#st-git').hidden = !(st?.isRepo);
+  $('#st-sync').hidden = !(st?.isRepo && st.remote);
+  if (st?.isRepo) {
+    $('#st-git').replaceChildren(icon('source-control'), el('span', '', st.branch || 'HEAD'));
+    const syncTxt = (st.ahead ? ` ↑${st.ahead}` : '') + (st.behind ? ` ↓${st.behind}` : '');
+    $('#st-sync').replaceChildren(icon('sync'), ...(syncTxt ? [el('span', '', syncTxt.trim())] : []));
+    $('#st-sync').title = st.remote ? `Sync with ${st.remote.slug || st.remote.name}${syncTxt}` : 'Sync';
+  }
+  const isRepo = !!st?.isRepo;
+  $('#git-empty').hidden = isRepo;
+  $('#git-repo').hidden = !isRepo;
+  $('#git-init-btn').hidden = !root || isRepo;
+  $('#git-empty-msg').textContent = root ? 'This folder is not a Git repository yet.' : 'Open a folder to use Source Control, or clone a repository directly from GitHub.';
+  if (!isRepo) return;
+
+  const rem = $('#git-remote');
+  if (st.remote) {
+    const label = st.remote.slug || st.remote.url;
+    const link = st.remote.githubUrl ? el('a', '', label) : el('span', '', label);
+    if (st.remote.githubUrl) { link.href = st.remote.githubUrl; link.target = '_blank'; link.rel = 'noopener'; link.title = 'Open on GitHub'; }
+    const edBtn = el('button', 'ibtn'); edBtn.title = 'Change GitHub Remote…'; edBtn.append(icon('edit'));
+    edBtn.onclick = () => openGitDialog('remote');
+    rem.replaceChildren(icon(st.remote.githubUrl ? 'github' : 'cloud'), link, el('span', 'sp'), edBtn);
+  } else {
+    const conn = el('button', 'btn sec'); conn.style.height = '22px'; conn.style.fontSize = '12px'; conn.textContent = 'Connect GitHub Remote…';
+    conn.onclick = () => openGitDialog('remote');
+    rem.replaceChildren(icon('github'), el('span', 'sp'), conn);
+  }
+
+  const list = $('#git-list');
+  const sec = (id, title, count, actions, body) => {
+    const open = !gitCollapsed.has(id);
+    const head = el('div', 'section git-sec');
+    head.append(icon(open ? 'chevron-down' : 'chevron-right'), el('span', '', title), el('span', 'badge', String(count)));
+    if (actions.length) {
+      const box = el('span', 'actions');
+      for (const a of actions) {
+        const b = el('button', 'ibtn'); b.title = a.title; b.append(icon(a.icon));
+        b.onclick = e => { e.stopPropagation(); a.run(); };
+        box.append(b);
+      }
+      head.append(box);
+    }
+    head.onclick = () => { open ? gitCollapsed.add(id) : gitCollapsed.delete(id); renderGit(); };
+    return open ? [head, ...body] : [head];
+  };
+  const itemRow = (it, staged) => {
+    const row = el('div', 'row git-row');
+    row.title = it.path;
+    const dir = it.path.includes('/') ? it.path.split('/').slice(0, -1).join('/') : '';
+    const act = el('span', 'actions');
+    const mk = (ic, title, fn) => {
+      const b = el('button', 'ibtn'); b.title = title; b.append(icon(ic));
+      b.onclick = e => { e.stopPropagation(); fn(); };
+      act.append(b);
+    };
+    if (!it.status.includes('D')) mk('go-to-file', 'Open File', () => openFile(it.path).catch(fail));
+    if (staged) mk('remove', 'Unstage Changes', () => gitOp('/git/unstage', { paths: [it.path] }));
+    else {
+      mk('discard', 'Discard Changes', () => gitDiscard(it));
+      mk('add', 'Stage Changes', () => gitOp('/git/stage', { paths: [it.path] }));
+    }
+    const stTag = el('span', `git-st ${it.status}`, it.status);
+    row.append(fileIcon(base(it.path)), el('span', 'name', base(it.path)), ...(dir ? [el('span', 'qdesc', dir)] : []), act, stTag);
+    row.onclick = () => openGitDiff(it.path, staged).catch(fail);
+    return row;
+  };
+  const nodes = [];
+  if (st.staged.length) {
+    nodes.push(...sec('staged', 'Staged Changes', st.staged.length, [
+      { icon: 'remove', title: 'Unstage All Changes', run: () => gitOp('/git/unstage', {}) },
+    ], st.staged.map(it => itemRow(it, true))));
+  }
+  nodes.push(...sec('changes', 'Changes', st.unstaged.length, st.unstaged.length ? [
+    { icon: 'add', title: 'Stage All Changes', run: () => gitOp('/git/stage', {}) },
+  ] : [], st.unstaged.length ? st.unstaged.map(it => itemRow(it, false)) : [el('div', 'sr-msg', 'No uncommitted changes.')]));
+  if (gitCommits.length) {
+    nodes.push(...sec('commits', 'Recent Commits', gitCommits.length, [], gitCommits.map(c => {
+      const r = el('div', 'row git-commit');
+      r.title = `${c.hash}\n${c.author} · ${c.date}\n${c.subject}`;
+      const info = el('div', 'git-cinfo');
+      info.append(el('div', 'git-cmsg', c.subject), el('div', 'git-cmeta', `${c.author} · ${c.date}`));
+      r.append(el('span', 'git-hash', c.shortHash), info);
+      return r;
+    })));
+  }
+  list.replaceChildren(...nodes);
+}
+async function openGitDiff(rel, staged) {
+  showHome(false);
+  const { original, modified } = await getJSON(`/git/diff?path=${enc(rel)}&staged=${staged ? '1' : '0'}`);
+  closeCompare();
+  const u0 = monaco.Uri.file('/__git_orig__/' + rel), u1 = monaco.Uri.file('/__git_mod__/' + rel);
+  monaco.editor.getModel(u0)?.dispose(); monaco.editor.getModel(u1)?.dispose();
+  const orig = monaco.editor.createModel(original, undefined, u0);
+  const mod = monaco.editor.createModel(modified, undefined, u1);
+  const box = el('div'); box.id = 'diff';
+  const openBtn = el('button', 'btn sec', 'Open File');
+  openBtn.onclick = () => { closeCompare(); openFile(rel).catch(fail); };
+  const stageBtn = el('button', 'btn', staged ? 'Unstage' : 'Stage');
+  stageBtn.onclick = async () => { await gitOp(staged ? '/git/unstage' : '/git/stage', { paths: [rel] }); closeCompare(); };
+  const x = el('button', 'ibtn'); x.title = 'Close'; x.append(icon('close')); x.onclick = () => closeCompare();
+  const bar = el('div', 'dbar');
+  bar.append(icon('git-compare'), el('span', 'dt', `${rel} (${staged ? 'HEAD ↔ Staged' : 'Index ↔ Working Tree'})`), el('span', 'sp'), openBtn, stageBtn, x);
+  const host = el('div', 'dhost');
+  box.append(bar, host); $('#edwrap').append(box);
+  const de = monaco.editor.createDiffEditor(host, { automaticLayout: true, readOnly: true, originalEditable: false, fontFamily: editor.getRawOptions().fontFamily, fontSize: editor.getRawOptions().fontSize, wordWrap: prefs.wrap ? 'on' : 'off' });
+  de.setModel({ original: orig, modified: mod });
+  diff = { kind: 'git', rel, staged, de, orig, mod, box };
+}
+async function gitOp(endpoint, payload = {}, okMsg = '') {
+  try {
+    await postJSON(endpoint, payload);
+    if (okMsg) toast(okMsg);
+    if (endpoint === '/git/pull' || endpoint === '/git/checkout') { await renderTree().catch(() => {}); await reloadClean(); }
+    await refreshGit();
+  } catch (e) { fail(e); }
+}
+async function gitDiscard(it) {
+  const msg = it.untracked ? `Move untracked file '${base(it.path)}' to ${TRASH}?` : `Discard changes in '${base(it.path)}'?`;
+  const r = await modal(msg, it.untracked ? `You can restore it from the ${TRASH}.` : 'This cannot be undone.',
+    [{ label: it.untracked ? `Move to ${TRASH}` : 'Discard Changes', value: 'ok', primary: true }, { label: 'Cancel', value: 'cancel' }]);
+  if (r !== 'ok') return;
+  await gitOp('/git/discard', { path: it.path, untracked: !!it.untracked });
+  await reloadClean();
+}
+async function gitCommit(andPush = false) {
+  if (!gitState?.isRepo) return;
+  const message = $('#git-msg').value.trim();
+  if (!message) { $('#git-msg').focus(); return toast('Enter a commit message first.', 'warn'); }
+  try {
+    if (!gitState.staged.length && gitState.unstaged.length) await postJSON('/git/stage', {});
+    await postJSON('/git/commit', { message });
+    $('#git-msg').value = '';
+    if (andPush) await postJSON('/git/push', {});
+    toast(andPush ? 'Committed and pushed to GitHub.' : 'Committed changes.');
+    await refreshGit();
+  } catch (e) { fail(e); }
+}
+function gitBranchPicker() {
+  if (!gitState?.isRepo) return toast('Open a Git repository first.', 'warn');
+  quickOpen('', 'branch');
+}
+let gdMode = 'clone';
+function openGitDialog(mode = 'clone') {
+  gdMode = mode;
+  const d = $('#gitdlg');
+  $('#gd-err').hidden = true; $('#gd-err').textContent = '';
+  $('#gd-title').textContent = mode === 'clone' ? 'Clone from GitHub' : 'Connect GitHub Remote';
+  $('#gd-ok').textContent = mode === 'clone' ? 'Clone' : 'Save Remote';
+  $('#gd-dir-wrap').hidden = mode !== 'clone';
+  $('#gd-url').value = mode === 'remote' ? (gitState?.remote?.url || '') : '';
+  if (mode === 'clone') $('#gd-dir').value = root ? root.split(/[\\/]/).slice(0, -1).join(sepOf()) : '';
+  d.showModal();
+  $('#gd-url').focus();
+}
+$('#gd-cancel').onclick = () => $('#gitdlg').close();
+lightDismiss($('#gitdlg'), () => $('#gitdlg').close());
+$('#gd-form').onsubmit = async e => {
+  e.preventDefault();
+  const url = $('#gd-url').value.trim(), parentDir = $('#gd-dir').value.trim();
+  if (!url) return;
+  $('#gd-err').hidden = true; $('#gd-ok').disabled = true;
+  $('#gd-ok').textContent = gdMode === 'clone' ? 'Cloning…' : 'Saving…';
+  try {
+    if (gdMode === 'clone') {
+      const prev = root;
+      const d = await (await postJSON('/git/clone', { url, parentDir })).json();
+      $('#gitdlg').close();
+      if (prev && d.root !== prev) hibernateCurrent(prev);
+      root = d.root;
+      await restoreProject(root);
+      showView('explorer');
+      toast('Cloned repository from GitHub.');
+    } else {
+      await postJSON('/git/remote', { url });
+      $('#gitdlg').close();
+      await refreshGit();
+      toast('Connected GitHub remote.');
+    }
+  } catch (err) {
+    $('#gd-err').textContent = err.message; $('#gd-err').hidden = false;
+  } finally {
+    $('#gd-ok').disabled = false;
+    $('#gd-ok').textContent = gdMode === 'clone' ? 'Clone' : 'Save Remote';
+  }
+};
+$('#git-msg').onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !composing(e)) { e.preventDefault(); gitCommit(false); } };
+$('#git-commit').onclick = () => gitCommit(false);
+$('#git-commit-push').onclick = () => gitCommit(true);
+$('#git-init-btn').onclick = () => gitOp('/git/init', {}, 'Initialized Git repository.');
+$('#git-clone-btn').onclick = $('#git-empty-clone').onclick = $('#welcome-clone').onclick = () => openGitDialog('clone');
+$('#git-pull-btn').onclick = () => gitOp('/git/pull', {}, 'Pulled from remote.');
+$('#git-push-btn').onclick = () => gitOp('/git/push', {}, 'Pushed to GitHub.');
+$('#git-fetch-btn').onclick = () => gitOp('/git/fetch', {}, 'Fetched remote updates.');
+$('#git-refresh-btn').onclick = () => refreshGit().catch(fail);
+$('#st-git').onclick = gitBranchPicker;
+$('#st-sync').onclick = () => (gitState?.behind && !gitState?.ahead ? gitOp('/git/pull', {}, 'Pulled from remote.') : gitOp('/git/push', {}, 'Pushed to GitHub.'));
+
+// ---------- agent (ACP over the bridge's stdio pipe; minimal for now) ----------
+let sid = null, acp = null, agentName = '', agentState = 'off', nextId = 1, agentGen = 0, agentCtl = null, agentLineCursor = 0;
+const pending = new Map(), toolEls = new Map();
+let turn = null, curText = null, curThought = null, outEl = null, outN = 0;
+const scrollLog = () => { const l = $('#log'); l.scrollTop = l.scrollHeight; };
+const post = o => api(`/agent/${sid}/send`, { method: 'POST', body: JSON.stringify(o) });
+function rpc(method, params) {
+  const id = nextId++;
+  return new Promise((res, rej) => {
+    pending.set(id, { res, rej });
+    post({ jsonrpc: '2.0', id, method, params }).catch(e => {
+      if (pending.delete(id)) rej(e);
+      fail(e);
+    });
+  });
+}
+
+function chatEmpty() {
+  const e = el('div', 'chat-empty'); e.id = 'chat-empty';
+  const b = el('button', 'btn', 'Start agent'); b.onclick = startAgent;
+  e.append(icon('sparkle', 'big'), el('h3', '', 'Chat with a local agent'), el('p', '', 'The agent runs on this machine, inside the open folder.'), b);
+  $('#log').replaceChildren(e);
+}
+function msg(kind, name, ic) {
+  $('#chat-empty')?.remove();
+  const m = el('div', 'msg ' + kind), who = el('div', 'who'), av = el('span', 'av'), body = el('div', 'body');
+  av.append(icon(ic)); who.append(av, el('span', '', name)); m.append(who, body);
+  $('#log').append(m); scrollLog();
+  return body;
+}
+function note(text, cls = '') {
+  $('#chat-empty')?.remove();
+  const n = el('div', 'note ' + cls); n.append(icon(cls === 'err' ? 'error' : 'info'), el('span', '', text));
+  $('#log').append(n); scrollLog();
+}
+const turnBody = () => turn ??= msg('agent', agentName, 'sparkle');
+function logLine(t) {
+  if (!outEl) { outEl = el('details', 'out'); outEl.append(el('summary'), el('pre')); $('#log').append(outEl); }
+  outEl.lastChild.textContent += t.endsWith('\n') ? t : t + '\n';
+  outEl.firstChild.textContent = `Agent output (${++outN})`;
+}
+function setAgent(s) {
+  agentState = s;
+  const on = s !== 'off';
+  if (!on) $$('#log .perm-b button').forEach(b => { b.disabled = true; });
+  $('#power').replaceChildren(icon(on ? 'debug-stop' : 'play')); $('#power').title = on ? 'Stop agent' : 'Start agent';
+  $('#agent').disabled = on;
+  $('#in').placeholder = s === 'ready' ? `Ask ${agentName}… (Enter to send, Shift+Enter for newline)` : s === 'working' ? 'Working…' : 'Start an agent to chat';
+  $('#send').replaceChildren(icon(s === 'working' ? 'debug-stop' : 'send')); $('#send').title = s === 'working' ? 'Cancel' : 'Send (Enter)';
+  $('#send').disabled = !(s === 'ready' || s === 'working');
+  const [ic, cls, txt] = { off: ['circle-large-outline', '', 'Agent off'], starting: ['loading', 'spin', agentName + ' · starting'], ready: ['circle-filled', 'ok', agentName], working: ['loading', 'spin', agentName + ' · working'] }[s];
+  $('#st-agent').replaceChildren(icon(ic, cls), el('span', '', txt));
+  $('#cinfo').textContent = on ? `${agentName} · ${base(root)}` : '';
+}
+function update(u) {
+  const k = u.sessionUpdate, t = u.content?.text ?? '';
+  if (k === 'agent_message_chunk') { curThought = null; curText ??= turnBody().appendChild(el('div', 'txt')); curText.textContent += t; return scrollLog(); }
+  if (k === 'agent_thought_chunk') { curText = null; curThought ??= turnBody().appendChild(el('div', 'thought')); curThought.textContent += t; return scrollLog(); }
+  if (k === 'tool_call' || k === 'tool_call_update') {
+    curText = curThought = null;
+    let r = toolEls.get(u.toolCallId);
+    if (!r) { r = turnBody().appendChild(el('div', 'tool')); toolEls.set(u.toolCallId, r); }
+    r.dataset.title = u.title ?? r.dataset.title ?? 'Tool call';
+    const st = u.status ?? r.dataset.status ?? 'pending'; r.dataset.status = st;
+    const [ic, cls] = st === 'completed' ? ['check', 'ok'] : st === 'failed' ? ['error', 'err'] : ['loading', 'spin'];
+    r.replaceChildren(icon(ic, cls), el('span', '', r.dataset.title));
+    scrollLog();
+  }
+}
+function ask(m) {
+  curText = curThought = null;
+  const card = turnBody().appendChild(el('div', 'perm')), row = el('div', 'perm-b');
+  card.append(el('div', '', m.params.toolCall?.title || 'The agent wants to run a tool'), row);
+  let first = true;
+  for (const o of m.params.options) {
+    const primary = first && o.kind?.startsWith('allow'); if (primary) first = false;
+    const b = el('button', primary ? 'btn' : 'btn sec', o.name);
+    b.onclick = () => { row.replaceWith(el('div', 'note', '→ ' + o.name)); post({ jsonrpc: '2.0', id: m.id, result: { outcome: { outcome: 'selected', optionId: o.optionId } } }).catch(fail); };
+    row.append(b);
+  }
+  scrollLog();
+}
+function onMsg(m, from) {
+  if (from !== sid) return; // a stopped session
+  if (m.log) return logLine(m.log);
+  if ('exit' in m) {
+    for (const p of pending.values()) p.rej(new Error('agent exited'));
+    pending.clear(); toolEls.clear(); sid = acp = null; setAgent('off');
+    return note(`Agent exited (code ${m.exit}).`, m.exit ? 'err' : '');
+  }
+  if (m.id !== undefined && !m.method) {
+    const p = pending.get(m.id); pending.delete(m.id);
+    return m.error ? p?.rej(new Error(m.error.message)) : p?.res(m.result);
+  }
+  if (m.method === 'session/update') return update(m.params.update);
+  if (m.method === 'session/request_permission') return ask(m);
+  if (m.id !== undefined) post({ jsonrpc: '2.0', id: m.id, error: { code: -32601, message: 'not supported by this client' } }).catch(() => {});
+}
+async function pump(id, from = 0) { // fetch-based SSE so the token can travel in a header
+  agentCtl?.abort();
+  const ctl = agentCtl = new AbortController();
+  const rd = (await api(`/agent/${id}/stream?from=${from}`, { signal: ctl.signal })).body.getReader(), dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await rd.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const lines = buf.slice(0, i).split('\n'); buf = buf.slice(i + 2);
+      const idL = lines.find(l => l.startsWith('id: '));
+      if (idL) agentLineCursor = Math.max(agentLineCursor, +idL.slice(4) + 1);
+      const d = lines.find(l => l.startsWith('data: '));
+      if (d) onMsg(JSON.parse(d.slice(6)), id);
+    }
+  }
+}
+async function startAgent() {
+  if (!root) return toast('Open a folder first.', 'warn');
+  agentName = $('#agent').value;
+  if (!agentName) return toast('No agents configured.', 'warn');
+  await stopAgent(true);
+  const gen = ++agentGen;
+  outEl = null; outN = 0; turn = null; toolEls.clear();
+  note(`Starting ${agentName}…`); setAgent('starting');
+  try {
+    const newSid = (await (await postJSON('/agent/start', { id: agentName })).json()).sid;
+    if (gen !== agentGen) { api('/agent/' + newSid, { method: 'DELETE' }).catch(() => {}); return; }
+    sid = newSid; agentLineCursor = 0;
+    pump(sid, 0).catch(() => {});
+    await rpc('initialize', { protocolVersion: 1, clientCapabilities: {} });
+    if (gen !== agentGen) return;
+    const res = await rpc('session/new', { cwd: root, mcpServers: [] });
+    if (gen !== agentGen) return;
+    acp = res.sessionId;
+    setAgent('ready'); note(`${agentName} is ready in ${root}`);
+  } catch (e) {
+    if (gen !== agentGen) return;
+    note(e.message, 'err');
+    await stopAgent(true);
+  }
+}
+async function stopAgent(silent) {
+  const wasOn = agentState !== 'off' || sid;
+  agentGen++;
+  agentCtl?.abort(); agentCtl = null; agentLineCursor = 0;
+  const s = sid; sid = acp = null;
+  const err = Object.assign(new Error('Agent stopped'), { stopped: true });
+  for (const p of pending.values()) p.rej(err);
+  pending.clear(); toolEls.clear();
+  if (wasOn) setAgent('off');
+  if (s) await api('/agent/' + s, { method: 'DELETE' }).catch(() => {});
+  if (!silent && wasOn) note('Agent stopped.');
+}
+async function sendPrompt() {
+  if (agentState === 'working') return post({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: acp } }).catch(fail);
+  const text = $('#in').value.trim();
+  if (!text || agentState !== 'ready') return;
+  $('#in').value = ''; autosize();
+  turn = null; toolEls.clear(); msg('user', 'You', 'account').textContent = text;
+  turn = curText = curThought = null; setAgent('working');
+  try { const r = await rpc('session/prompt', { sessionId: acp, prompt: [{ type: 'text', text }] }); if (r.stopReason !== 'end_turn') note('Stopped: ' + r.stopReason); }
+  catch (e) { if (!e.stopped) note(e.message, 'err'); }
+  if (acp) setAgent('ready');
+  turn = curText = curThought = null;
+  await renderTree().catch(() => {}); await reloadClean();
+}
+const autosize = () => { const t = $('#in'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 200) + 'px'; };
+$('#in').oninput = autosize;
+$('#in').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !composing(e)) { e.preventDefault(); if (agentState === 'ready') sendPrompt(); } };
+$('#send').onclick = sendPrompt;
+$('#power').onclick = () => (agentState === 'off' ? startAgent() : stopAgent(false));
+setAgent('off');
+chatEmpty();
+
+// ---------- VS Code Marketplace & Extension Host ----------
+let installedExts = [], marketExts = [], extSearchSeq = 0, extSearchTimer = null, marketLoaded = false;
+let activeThemeKey = 'default';
+try { activeThemeKey = localStorage.webideTheme || 'default'; } catch {}
+const extFactories = new Map(); // extDir -> factory(require, module, exports, define)
+const extActive = new Map();    // extDir -> { disposables, commands: Map<id, fn>, exports }
+let extBuiltins = new Set();
+
+const DEFAULT_CSS_VARS = (() => {
+  const s = getComputedStyle(document.documentElement);
+  const keys = ['--bg','--side','--card','--border','--fg','--strong','--dim','--faint','--accent','--accent-h','--hover','--sel','--sel-focus','--input','--input-border','--widget','--widget-border'];
+  const o = {}; for (const k of keys) o[k] = s.getPropertyValue(k).trim();
+  return o;
+})();
+const DEFAULT_TERM_THEME = { ...TERM_THEME };
+
+window.__webideExtDefine = (extId, factory) => { extFactories.set(extId, factory); };
+
+function cleanHex(c, withHash = true) {
+  if (typeof c !== 'string') return '';
+  let s = c.trim();
+  if (!s) return '';
+  if (s.startsWith('#')) s = s.slice(1);
+  if (/^[0-9a-fA-F]{3,4}$/.test(s)) s = [...s].map(ch => ch + ch).join('');
+  if (!/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(s)) return '';
+  return (withHash ? '#' : '') + s.toLowerCase();
+}
+
+function applyTerminalThemeColors(colors = {}, isLight = false) {
+  const next = { ...DEFAULT_TERM_THEME };
+  const map = {
+    background: colors['terminal.background'] || colors['panel.background'] || colors['editor.background'],
+    foreground: colors['terminal.foreground'] || colors['editor.foreground'] || colors.foreground,
+    cursor: colors['terminalCursor.foreground'] || colors['editorCursor.foreground'],
+    selectionBackground: colors['terminal.selectionBackground'] || colors['editor.selectionBackground'],
+    black: colors['terminal.ansiBlack'], red: colors['terminal.ansiRed'], green: colors['terminal.ansiGreen'],
+    yellow: colors['terminal.ansiYellow'], blue: colors['terminal.ansiBlue'], magenta: colors['terminal.ansiMagenta'],
+    cyan: colors['terminal.ansiCyan'], white: colors['terminal.ansiWhite'],
+    brightBlack: colors['terminal.ansiBrightBlack'], brightRed: colors['terminal.ansiBrightRed'],
+    brightGreen: colors['terminal.ansiBrightGreen'], brightYellow: colors['terminal.ansiBrightYellow'],
+    brightBlue: colors['terminal.ansiBrightBlue'], brightMagenta: colors['terminal.ansiBrightMagenta'],
+    brightCyan: colors['terminal.ansiBrightCyan'], brightWhite: colors['terminal.ansiBrightWhite'],
+  };
+  for (const [k, v] of Object.entries(map)) { const h = cleanHex(v); if (h) next[k] = h; }
+  if (isLight && !colors['terminal.background'] && !colors['editor.background']) next.background = '#f8fafc';
+  Object.assign(TERM_THEME, next);
+  for (const t of terms) if (t.term) try { t.term.options.theme = { ...TERM_THEME }; } catch {}
+}
+
+function restoreDefaultTheme(persist = false) {
+  activeThemeKey = 'default';
+  if (persist) try { localStorage.webideTheme = 'default'; } catch {}
+  document.documentElement.style.colorScheme = 'dark';
+  for (const [k, v] of Object.entries(DEFAULT_CSS_VARS)) document.documentElement.style.setProperty(k, v);
+  if (editor) monaco.editor.setTheme('dark-modern');
+  applyTerminalThemeColors({}, false);
+}
+
+function listAvailableThemes() {
+  const out = [];
+  for (const ext of installedExts) {
+    if (!ext.enabled) continue;
+    for (const t of ext.themes || []) out.push({ key: `${ext.dir}::${t.label}`, ext, theme: t, label: `${t.label} — ${ext.displayName}` });
+  }
+  return out;
+}
+
+function applyThemeByKey(themeKey, persist = false) {
+  if (!themeKey || themeKey === 'default') return restoreDefaultTheme(persist);
+  const found = listAvailableThemes().find(x => x.key === themeKey);
+  if (!found || !editor) return false;
+  const { theme } = found;
+  const base = theme.uiTheme === 'vs' || theme.uiTheme === 'hc-light' ? 'vs' : theme.uiTheme === 'hc-black' ? 'hc-black' : 'vs-dark';
+  const isLight = base === 'vs';
+  const rules = [];
+  for (const r of theme.tokenColors || []) {
+    if (!r || !r.settings) continue;
+    const fg = cleanHex(r.settings.foreground, false);
+    const bg = cleanHex(r.settings.background, false);
+    const fs = typeof r.settings.fontStyle === 'string' ? r.settings.fontStyle.trim().replace(/\bnormal\b/gi, '').trim() : '';
+    if (!fg && !bg && !fs) continue;
+    const scopes = Array.isArray(r.scope) ? r.scope : typeof r.scope === 'string' ? r.scope.split(',') : [''];
+    for (const sc of scopes) {
+      const token = String(sc || '').trim();
+      const rule = { token };
+      if (fg) rule.foreground = fg;
+      if (bg) rule.background = bg;
+      if (fs) rule.fontStyle = fs;
+      rules.push(rule);
+    }
+  }
+  const mColors = {};
+  for (const [k, v] of Object.entries(theme.colors || {})) { const h = cleanHex(v); if (h) mColors[k] = h; }
+  // Monaco requires theme identifiers matching /^[0-9a-zA-Z\-]+$/ (underscores fail).
+  const mId = 'ext-' + (themeKey.replace(/[^a-zA-Z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'theme');
+  try {
+    monaco.editor.defineTheme(mId, { base, inherit: true, rules, colors: mColors });
+    monaco.editor.setTheme(mId);
+  } catch (e) { console.warn('Theme define failed:', mId, e); return false; }
+
+  document.documentElement.style.colorScheme = isLight ? 'light' : 'dark';
+  const setVar = (k, val) => document.documentElement.style.setProperty(k, val);
+  const pick = (...keys) => keys.map(k => mColors[k]).find(Boolean);
+  setVar('--bg', pick('editor.background') || (isLight ? '#ffffff' : DEFAULT_CSS_VARS['--bg']));
+  setVar('--side', pick('sideBar.background', 'editor.background') || (isLight ? '#f3f4f6' : DEFAULT_CSS_VARS['--side']));
+  setVar('--card', pick('editorWidget.background', 'sideBar.background', 'editor.background') || (isLight ? '#f8fafc' : DEFAULT_CSS_VARS['--card']));
+  setVar('--fg', pick('sideBar.foreground', 'foreground', 'editor.foreground') || (isLight ? '#1e293b' : DEFAULT_CSS_VARS['--fg']));
+  setVar('--strong', pick('editor.foreground', 'foreground') || (isLight ? '#0f172a' : DEFAULT_CSS_VARS['--strong']));
+  setVar('--dim', pick('descriptionForeground', 'tab.inactiveForeground') || (isLight ? '#475569' : DEFAULT_CSS_VARS['--dim']));
+  setVar('--faint', pick('editorLineNumber.foreground') || (isLight ? '#64748b' : DEFAULT_CSS_VARS['--faint']));
+  setVar('--border', pick('sideBar.border', 'panel.border', 'editorGroup.border') || (isLight ? '#0000001a' : DEFAULT_CSS_VARS['--border']));
+  setVar('--accent', pick('button.background', 'focusBorder', 'activityBarBadge.background') || DEFAULT_CSS_VARS['--accent']);
+  setVar('--hover', pick('list.hoverBackground') || (isLight ? '#0000000a' : DEFAULT_CSS_VARS['--hover']));
+  setVar('--sel', pick('list.inactiveSelectionBackground') || (isLight ? '#00000012' : DEFAULT_CSS_VARS['--sel']));
+  setVar('--sel-focus', pick('list.activeSelectionBackground') || DEFAULT_CSS_VARS['--sel-focus']);
+  setVar('--input', pick('input.background') || (isLight ? '#ffffff' : DEFAULT_CSS_VARS['--input']));
+  setVar('--input-border', pick('input.border', 'contrastBorder') || (isLight ? '#00000024' : DEFAULT_CSS_VARS['--input-border']));
+  setVar('--widget', pick('editorWidget.background') || (isLight ? '#ffffff' : DEFAULT_CSS_VARS['--widget']));
+  setVar('--widget-border', pick('editorWidget.border') || (isLight ? '#0000001f' : DEFAULT_CSS_VARS['--widget-border']));
+  applyTerminalThemeColors(mColors, isLight);
+  activeThemeKey = themeKey;
+  if (persist) try { localStorage.webideTheme = themeKey; } catch {}
+  return true;
+}
+
+function tmScopeToToken(scope) {
+  const s = String(scope || '').toLowerCase();
+  if (!s) return '';
+  if (s.includes('comment')) return 'comment';
+  if (s.includes('string')) return 'string';
+  if (s.includes('constant.numeric')) return 'number';
+  if (s.includes('constant.language') || s.includes('constant')) return 'constant';
+  if (s.includes('keyword.operator') || s.includes('operator')) return 'operator';
+  if (s.includes('keyword')) return 'keyword';
+  if (s.includes('storage')) return 'type';
+  if (s.includes('entity.name.tag')) return 'tag';
+  if (s.includes('entity.other.attribute-name')) return 'attribute.name';
+  if (s.includes('entity.name.type') || s.includes('support.type') || s.includes('support.class')) return 'type';
+  if (s.includes('entity.name.function') || s.includes('support.function')) return 'identifier';
+  if (s.includes('variable')) return 'variable';
+  if (s.includes('punctuation')) return 'delimiter';
+  return 'source';
+}
+
+function safeRegex(pat) {
+  if (typeof pat !== 'string' || !pat) return null;
+  // Strip common Oniguruma-only flags that JS RegExp rejects at start of string
+  const cleaned = pat.replace(/^\(\?[imsx-]+\)/, '');
+  try { return new RegExp(cleaned); } catch { return null; }
+}
+
+function registerTmGrammar(grammar, disposables) {
+  const langId = grammar?.language;
+  if (!langId || !grammar.grammar || extBuiltins.has(langId)) return;
+  const tm = grammar.grammar;
+  const tokenizer = { root: [] };
+  let stateSeq = 0;
+  const visitedRepo = new Set();
+  const convertList = (list, target, depth = 0) => {
+    if (!Array.isArray(list) || depth > 8) return;
+    for (const p of list) {
+      if (!p || typeof p !== 'object') continue;
+      if (p.include) {
+        if (p.include === '$self' || p.include === '$base') target.push({ include: '@root' });
+        else if (p.include.startsWith('#')) {
+          const key = p.include.slice(1);
+          const repoKey = 'repo_' + key.replace(/[^a-zA-Z0-9_]/g, '_');
+          if (tm.repository?.[key]) {
+            if (!visitedRepo.has(key)) {
+              visitedRepo.add(key);
+              tokenizer[repoKey] = [];
+              const r = tm.repository[key];
+              if (Array.isArray(r.patterns)) convertList(r.patterns, tokenizer[repoKey], depth + 1);
+              else convertList([r], tokenizer[repoKey], depth + 1);
+            }
+            target.push({ include: '@' + repoKey });
+          }
+        }
+        continue;
+      }
+      if (p.match) {
+        const rx = safeRegex(p.match);
+        if (rx) target.push([rx, tmScopeToToken(p.name) || 'source']);
+      } else if (p.begin && p.end) {
+        const bRx = safeRegex(p.begin), eRx = safeRegex(p.end);
+        if (bRx && eRx) {
+          const stName = 'st_' + (++stateSeq);
+          const tok = tmScopeToToken(p.name || p.contentName) || 'string';
+          tokenizer[stName] = [[eRx, tok, '@pop']];
+          if (Array.isArray(p.patterns)) convertList(p.patterns, tokenizer[stName], depth + 1);
+          tokenizer[stName].push([/./, tok]);
+          target.push([bRx, tok, '@' + stName]);
+        }
+      } else if (Array.isArray(p.patterns)) convertList(p.patterns, target, depth + 1);
+    }
+  };
+  convertList(tm.patterns, tokenizer.root);
+  if (!tokenizer.root.length) return;
+  try {
+    const d = monaco.languages.setMonarchTokensProvider(langId, { tokenizer });
+    if (d) disposables.push(d);
+  } catch (e) { console.warn('Grammar register failed:', langId, e); }
+}
+
+function registerLangContributions(ext, disposables) {
+  const known = new Set(monaco.languages.getLanguages().map(l => l.id));
+  for (const lang of ext.languages || []) {
+    if (!lang?.id) continue;
+    if (!known.has(lang.id)) {
+      monaco.languages.register({
+        id: lang.id,
+        extensions: lang.extensions || [],
+        aliases: lang.aliases || [lang.id],
+        filenames: lang.filenames || [],
+        mimetypes: lang.mimetypes || [],
+      });
+      known.add(lang.id);
+    }
+    if (lang.configuration) {
+      const c = lang.configuration, mc = {};
+      if (c.comments) mc.comments = c.comments;
+      if (c.brackets) mc.brackets = c.brackets;
+      if (c.autoClosingPairs) {
+        mc.autoClosingPairs = c.autoClosingPairs.map(p => Array.isArray(p) ? { open: p[0], close: p[1] } : p);
+      }
+      if (c.surroundingPairs) {
+        mc.surroundingPairs = c.surroundingPairs.map(p => Array.isArray(p) ? { open: p[0], close: p[1] } : p);
+      }
+      const rx = safeRegex(c.wordPattern);
+      if (rx) mc.wordPattern = rx;
+      try {
+        const d = monaco.languages.setLanguageConfiguration(lang.id, mc);
+        if (d) disposables.push(d);
+      } catch {}
+    }
+  }
+  for (const g of ext.grammars || []) registerTmGrammar(g, disposables);
+  for (const s of ext.snippets || []) {
+    const lang = s?.language, defs = s?.snippets;
+    if (!lang || !defs || typeof defs !== 'object') continue;
+    const d = monaco.languages.registerCompletionItemProvider(lang, {
+      provideCompletionItems(model, position) {
+        const word = model.getWordUntilPosition(position);
+        const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn };
+        const suggestions = Object.entries(defs).map(([name, item]) => ({
+          label: Array.isArray(item.prefix) ? item.prefix[0] : (item.prefix || name),
+          kind: monaco.languages.CompletionItemKind.Snippet,
+          documentation: item.description || name,
+          detail: `${ext.displayName} snippet`,
+          insertText: Array.isArray(item.body) ? item.body.join('\n') : String(item.body || ''),
+          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+          range,
+        }));
+        return { suggestions };
+      },
+    });
+    disposables.push(d);
+  }
+  // Re-detect language for currently open plaintext models whose filename now matches a registered extension
+  for (const [rel, t] of tabs) {
+    if (t.model?.getLanguageId() === 'plaintext') {
+      const m = monaco.languages.getLanguages().find(l => (l.extensions || []).some(e => rel.endsWith(e)) || (l.filenames || []).includes(base(rel)));
+      if (m && m.id !== 'plaintext') monaco.editor.setModelLanguage(t.model, m.id);
+    }
+  }
+}
+
+function createVscodeApi(ext, disposables, cmdMap) {
+  class Disposable { constructor(fn) { this._fn = fn; } dispose() { try { this._fn?.(); } catch {} } static from(...ds) { return new Disposable(() => ds.forEach(d => d?.dispose?.())); } }
+  class EventEmitter {
+    constructor() { this._ls = new Set(); this.event = (fn, thisArg, ds) => { const f = thisArg ? fn.bind(thisArg) : fn; this._ls.add(f); const d = new Disposable(() => this._ls.delete(f)); if (Array.isArray(ds)) ds.push(d); return d; }; }
+    fire(v) { for (const f of [...this._ls]) try { f(v); } catch {} }
+    dispose() { this._ls.clear(); }
+  }
+  class Position { constructor(line, character) { this.line = line; this.character = character; } translate(dl = 0, dc = 0) { return new Position(this.line + dl, this.character + dc); } with(l = this.line, c = this.character) { return new Position(l, c); } isEqual(o) { return o && o.line === this.line && o.character === this.character; } }
+  class Range { constructor(a, b, c, d) { this.start = typeof a === 'number' ? new Position(a, b) : a; this.end = typeof a === 'number' ? new Position(c, d) : b; } get isEmpty() { return this.start.line === this.end.line && this.start.character === this.end.character; } }
+  class Selection extends Range { constructor(a, b, c, d) { super(a, b, c, d); this.anchor = this.start; this.active = this.end; } }
+  class TextEdit { constructor(range, newText) { this.range = range; this.newText = newText; } static replace(r, t) { return new TextEdit(r, t); } static insert(p, t) { return new TextEdit(new Range(p, p), t); } static delete(r) { return new TextEdit(r, ''); } }
+  class WorkspaceEdit { constructor() { this._edits = []; } replace(u, r, t) { this._edits.push({ u, r, t }); } insert(u, p, t) { this._edits.push({ u, r: new Range(p, p), t }); } delete(u, r) { this._edits.push({ u, r, t: '' }); } entries() { return []; } }
+  class MarkdownString { constructor(value = '') { this.value = value; } appendText(s) { this.value += s; return this; } appendMarkdown(s) { this.value += s; return this; } }
+  class Hover { constructor(contents, range) { this.contents = Array.isArray(contents) ? contents : [contents]; this.range = range; } }
+  class CompletionItem { constructor(label, kind) { this.label = label; this.kind = kind; } }
+  class SnippetString { constructor(value = '') { this.value = value; } }
+  class CancellationTokenSource { constructor() { this.token = { isCancellationRequested: false, onCancellationRequested: () => new Disposable() }; } cancel() { this.token.isCancellationRequested = true; } dispose() {} }
+  const Uri = {
+    file: p => ({ scheme: 'file', path: p, fsPath: p, toString: () => 'file://' + p }),
+    parse: s => ({ scheme: s.split(':')[0] || 'file', path: s, fsPath: s, toString: () => s }),
+    joinPath: (u, ...parts) => Uri.file([u.path || '', ...parts].join('/').replace(/\/+/g, '/')),
+  };
+  const toMRange = r => r ? { startLineNumber: (r.start?.line ?? 0) + 1, startColumn: (r.start?.character ?? 0) + 1, endLineNumber: (r.end?.line ?? 0) + 1, endColumn: (r.end?.character ?? 0) + 1 } : undefined;
+  const fromMPos = p => new Position((p?.lineNumber ?? 1) - 1, (p?.column ?? 1) - 1);
+  const fromMRange = r => new Range((r.startLineNumber ?? 1) - 1, (r.startColumn ?? 1) - 1, (r.endLineNumber ?? 1) - 1, (r.endColumn ?? 1) - 1);
+  const wrapDoc = (rel, model) => ({
+    uri: Uri.file((root || '') + '/' + rel), fileName: rel, languageId: model.getLanguageId(),
+    lineCount: model.getLineCount(), version: model.getVersionId(), isDirty: tabs.get(rel)?.dirty || false,
+    getText: r => (r ? model.getValueInRange(toMRange(r)) : model.getValue()),
+    lineAt: n => { const ln = (typeof n === 'number' ? n : n.line) + 1; const txt = model.getLineContent(ln); return { lineNumber: ln - 1, text: txt, range: new Range(ln - 1, 0, ln - 1, txt.length) }; },
+    positionAt: off => fromMPos(model.getPositionAt(off)),
+    offsetAt: pos => model.getOffsetAt({ lineNumber: pos.line + 1, column: pos.character + 1 }),
+  });
+  const activeEditorWrap = () => {
+    const model = editor?.getModel();
+    if (!model || model === blankModel) return undefined;
+    const rel = active || [...tabs.entries()].find(([, t]) => t.model === model)?.[0] || 'untitled';
+    const sel = editor.getSelection();
+    return {
+      document: wrapDoc(rel, model),
+      selection: sel ? new Selection(fromMPos(sel.getStartPosition()), fromMPos(sel.getEndPosition())) : new Selection(0, 0, 0, 0),
+      selections: (editor.getSelections() || []).map(s => new Selection(fromMPos(s.getStartPosition()), fromMPos(s.getEndPosition()))),
+      options: { tabSize: model.getOptions().tabSize, insertSpaces: model.getOptions().insertSpaces },
+      edit(cb) {
+        const ops = [];
+        cb({
+          replace: (target, text) => ops.push({ range: toMRange(target.line != null ? new Range(target, target) : target), text }),
+          insert: (pos, text) => ops.push({ range: toMRange(new Range(pos, pos)), text }),
+          delete: range => ops.push({ range: toMRange(range), text: '' }),
+        });
+        if (ops.length) editor.executeEdits(ext.dir, ops);
+        return Promise.resolve(true);
+      },
+    };
+  };
+  const cfgKey = sec => 'webideCfg:' + (sec || '');
+  const onDidChangeTextDocument = new EventEmitter();
+  const onDidChangeConfiguration = new EventEmitter();
+  disposables.push(onDidChangeTextDocument, onDidChangeConfiguration);
+  return {
+    version: '1.95.0',
+    Disposable, EventEmitter, Position, Range, Selection, TextEdit, WorkspaceEdit, MarkdownString, Hover, CompletionItem, SnippetString, CancellationTokenSource, Uri,
+    CompletionItemKind: { Text: 0, Method: 1, Function: 2, Constructor: 3, Field: 4, Variable: 5, Class: 6, Interface: 7, Module: 8, Property: 9, Unit: 10, Value: 11, Enum: 12, Keyword: 13, Snippet: 14, Color: 15, File: 16, Reference: 17 },
+    DiagnosticSeverity: { Error: 0, Warning: 1, Information: 2, Hint: 3 },
+    StatusBarAlignment: { Left: 1, Right: 2 },
+    EndOfLine: { LF: 1, CRLF: 2 },
+    commands: {
+      registerCommand(id, fn) {
+        cmdMap.set(id, fn);
+        const d = new Disposable(() => cmdMap.delete(id));
+        disposables.push(d);
+        return d;
+      },
+      registerTextEditorCommand(id, fn) {
+        return this.registerCommand(id, (...args) => { const ed = activeEditorWrap(); if (ed) return fn(ed, {}, ...args); });
+      },
+      async executeCommand(id, ...args) {
+        for (const rt of extActive.values()) if (rt.commands.has(id)) return rt.commands.get(id)(...args);
+      },
+      getCommands: async () => [...extActive.values()].flatMap(rt => [...rt.commands.keys()]),
+    },
+    window: {
+      get activeTextEditor() { return activeEditorWrap(); },
+      get visibleTextEditors() { const e = activeEditorWrap(); return e ? [e] : []; },
+      showInformationMessage: (msg, ...items) => { toast(String(msg)); return Promise.resolve(typeof items[0] === 'string' ? items[0] : undefined); },
+      showWarningMessage: (msg, ...items) => { toast(String(msg), 'warn'); return Promise.resolve(typeof items[0] === 'string' ? items[0] : undefined); },
+      showErrorMessage: (msg, ...items) => { toast(String(msg), 'error'); return Promise.resolve(typeof items[0] === 'string' ? items[0] : undefined); },
+      showQuickPick: (items = []) => Promise.resolve(Array.isArray(items) ? items[0] : undefined),
+      showInputBox: (opts = {}) => Promise.resolve(opts.value ?? ''),
+      createOutputChannel: () => ({ append() {}, appendLine() {}, clear() {}, show() {}, hide() {}, dispose() {} }),
+      createStatusBarItem: () => ({ text: '', tooltip: '', command: '', show() {}, hide() {}, dispose() {} }),
+      onDidChangeActiveTextEditor: () => new Disposable(),
+      onDidChangeTextEditorSelection: () => new Disposable(),
+    },
+    workspace: {
+      get workspaceFolders() { return root ? [{ uri: Uri.file(root), name: base(root), index: 0 }] : undefined; },
+      get textDocuments() { return [...tabs.entries()].map(([rel, t]) => wrapDoc(rel, t.model)); },
+      getConfiguration: section => {
+        let store = {}; try { store = JSON.parse(localStorage[cfgKey(section)] || '{}'); } catch {}
+        return {
+          get: (k, def) => (k in store ? store[k] : def),
+          has: k => k in store,
+          update: (k, v) => { store[k] = v; try { localStorage[cfgKey(section)] = JSON.stringify(store); } catch {} onDidChangeConfiguration.fire({ affectsConfiguration: s => !section || s.startsWith(section) }); return Promise.resolve(); },
+        };
+      },
+      onDidChangeConfiguration: onDidChangeConfiguration.event,
+      onDidChangeTextDocument: onDidChangeTextDocument.event,
+      applyEdit: async we => {
+        const model = editor?.getModel();
+        if (!model || !we?._edits?.length) return false;
+        editor.executeEdits(ext.dir, we._edits.map(x => ({ range: toMRange(x.r), text: x.t })));
+        return true;
+      },
+      fs: {
+        readFile: async u => new TextEncoder().encode(await (await api('/fs/file?path=' + enc(u.path || ''))).text()),
+      },
+    },
+    languages: {
+      registerDocumentFormattingEditProvider(sel, prov) {
+        const langs = typeof sel === 'string' ? [sel] : Array.isArray(sel) ? sel.map(s => typeof s === 'string' ? s : s.language).filter(Boolean) : [sel?.language].filter(Boolean);
+        const ds = langs.map(l => monaco.languages.registerDocumentFormattingEditProvider(l, {
+          async provideDocumentFormattingEdits(model, opts, token) {
+            const rel = [...tabs.entries()].find(([, t]) => t.model === model)?.[0] || 'untitled';
+            const res = await prov.provideDocumentFormattingEdits?.(wrapDoc(rel, model), opts, token);
+            return (res || []).map(ed => ({ range: toMRange(ed.range), text: ed.newText }));
+          },
+        }));
+        ds.forEach(d => disposables.push(d));
+        return Disposable.from(...ds);
+      },
+      registerCompletionItemProvider(sel, prov, ...triggers) {
+        const langs = typeof sel === 'string' ? [sel] : Array.isArray(sel) ? sel.map(s => typeof s === 'string' ? s : s.language).filter(Boolean) : [sel?.language].filter(Boolean);
+        const ds = langs.map(l => monaco.languages.registerCompletionItemProvider(l, {
+          triggerCharacters: triggers,
+          async provideCompletionItems(model, position) {
+            const rel = [...tabs.entries()].find(([, t]) => t.model === model)?.[0] || 'untitled';
+            const res = await prov.provideCompletionItems?.(wrapDoc(rel, model), fromMPos(position), new CancellationTokenSource().token, {});
+            const items = Array.isArray(res) ? res : res?.items || [];
+            const word = model.getWordUntilPosition(position);
+            const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn: word.startColumn, endColumn: word.endColumn };
+            return { suggestions: items.map(it => ({
+              label: typeof it.label === 'string' ? it.label : it.label?.label || '',
+              kind: it.kind ?? monaco.languages.CompletionItemKind.Text,
+              detail: it.detail, documentation: it.documentation?.value ?? it.documentation,
+              insertText: it.insertText?.value ?? it.insertText ?? (typeof it.label === 'string' ? it.label : it.label?.label || ''),
+              insertTextRules: it.insertText?.value != null ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
+              range,
+            })) };
+          },
+        }));
+        ds.forEach(d => disposables.push(d));
+        return Disposable.from(...ds);
+      },
+      registerHoverProvider(sel, prov) {
+        const langs = typeof sel === 'string' ? [sel] : Array.isArray(sel) ? sel.map(s => typeof s === 'string' ? s : s.language).filter(Boolean) : [sel?.language].filter(Boolean);
+        const ds = langs.map(l => monaco.languages.registerHoverProvider(l, {
+          async provideHover(model, position) {
+            const rel = [...tabs.entries()].find(([, t]) => t.model === model)?.[0] || 'untitled';
+            const h = await prov.provideHover?.(wrapDoc(rel, model), fromMPos(position), new CancellationTokenSource().token);
+            if (!h) return null;
+            return { contents: (h.contents || []).map(c => ({ value: typeof c === 'string' ? c : c.value || '' })), range: toMRange(h.range) };
+          },
+        }));
+        ds.forEach(d => disposables.push(d));
+        return Disposable.from(...ds);
+      },
+      createDiagnosticCollection: () => ({ set() {}, delete() {}, clear() {}, dispose() {} }),
+    },
+  };
+}
+
+function loadScriptOnce(url) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = url; s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Failed to load ' + url));
+    document.head.append(s);
+  });
+}
+
+async function activateExtension(ext) {
+  deactivateExtension(ext.dir);
+  if (!ext.enabled || !editor) return;
+  const disposables = [], cmdMap = new Map();
+  registerLangContributions(ext, disposables);
+  let exps = {};
+  if (ext.hasBrowser) {
+    try {
+      if (!extFactories.has(ext.dir)) await loadScriptOnce(`/ext/${enc(ext.dir)}/bundle.js`);
+      const factory = extFactories.get(ext.dir);
+      if (factory) {
+        const vsApi = createVscodeApi(ext, disposables, cmdMap);
+        const pathShim = {
+          join: (...a) => a.filter(Boolean).join('/').replace(/\/+/g, '/'),
+          basename: p => base(p),
+          dirname: p => p.split('/').slice(0, -1).join('/') || '/',
+          extname: p => { const m = base(p).match(/\.[^.]+$/); return m ? m[0] : ''; },
+        };
+        const req = name => (name === 'vscode' ? vsApi : name === 'path' || name === 'node:path' ? pathShim : name === 'events' ? { EventEmitter: vsApi.EventEmitter } : {});
+        const mod = { exports: {} };
+        factory(req, mod, mod.exports, undefined);
+        exps = mod.exports || {};
+        const makeMemento = prefix => ({
+          get: (k, d) => { try { const v = localStorage.getItem(prefix + ':' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+          update: (k, v) => { try { localStorage.setItem(prefix + ':' + k, JSON.stringify(v)); } catch {} return Promise.resolve(); },
+        });
+        const ctx = {
+          subscriptions: disposables,
+          extensionUri: vsApi.Uri.file('/ext/' + ext.dir),
+          extensionPath: '/ext/' + ext.dir,
+          globalState: makeMemento('extG:' + ext.dir),
+          workspaceState: makeMemento('extW:' + ext.dir),
+          asAbsolutePath: p => p,
+        };
+        if (typeof exps.activate === 'function') await exps.activate(ctx);
+      }
+    } catch (e) { console.warn(`Extension ${ext.id} web host error:`, e); }
+  }
+  extActive.set(ext.dir, { ext, disposables, commands: cmdMap, exports: exps });
+}
+
+function deactivateExtension(extDir) {
+  const rt = extActive.get(extDir);
+  if (!rt) return;
+  try { rt.exports?.deactivate?.(); } catch {}
+  for (const d of rt.disposables) try { d.dispose?.(); } catch {}
+  extActive.delete(extDir);
+  if (activeThemeKey.startsWith(extDir + '::')) restoreDefaultTheme(true);
+}
+
+function getExtCommands() {
+  const out = [];
+  for (const ext of installedExts) {
+    if (!ext.enabled) continue;
+    const rt = extActive.get(ext.dir);
+    for (const c of ext.commands || []) {
+      if (rt?.commands.has(c.command)) {
+        out.push({ label: `${c.category ? c.category + ': ' : ''}${c.title || c.command}`, run: () => rt.commands.get(c.command)() });
+      }
+    }
+    for (const [cid, fn] of rt?.commands || []) {
+      if (!(ext.commands || []).some(c => c.command === cid)) out.push({ label: `Extension (${ext.displayName}): ${cid}`, run: () => fn() });
+    }
+  }
+  return out;
+}
+
+async function loadExtensions() {
+  if (!editor) return;
+  if (!extBuiltins.size) extBuiltins = new Set(monaco.languages.getLanguages().map(l => l.id));
+  installedExts = await getJSON('/ext/installed').catch(() => []);
+  for (const ext of installedExts) {
+    if (ext.enabled) await activateExtension(ext);
+    else deactivateExtension(ext.dir);
+  }
+  if (activeThemeKey !== 'default') {
+    if (!applyThemeByKey(activeThemeKey, false)) restoreDefaultTheme(false);
+  }
+  renderExtensions();
+}
+
+const fmtInstalls = n => !n ? '' : n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K' : String(n);
+function makeExtIcon(item) {
+  if (item.iconUrl) {
+    const img = el('img', 'ext-icon');
+    img.src = item.iconUrl; img.alt = ''; img.loading = 'lazy';
+    img.onerror = () => { const ph = el('div', 'ext-icon-ph'); ph.append(icon('extensions')); img.replaceWith(ph); };
+    return img;
+  }
+  const ph = el('div', 'ext-icon-ph'); ph.append(icon('extensions')); return ph;
+}
+function extCapabilityTags(item) {
+  const tags = [];
+  if (item.themes?.length) tags.push(`${item.themes.length} Theme${item.themes.length > 1 ? 's' : ''}`);
+  if (item.languages?.length) tags.push('Lang');
+  if (item.grammars?.length) tags.push('Grammar');
+  if (item.snippets?.length) tags.push('Snippets');
+  if (item.hasBrowser) tags.push('Web');
+  return tags;
+}
+
+function renderExtCard(item, installedMap) {
+  const inst = installedMap.get(item.id.toLowerCase()) || installedMap.get((item.dir || '').toLowerCase());
+  const row = el('div', 'ext-item');
+  row.append(makeExtIcon(inst || item));
+  const body = el('div', 'ext-body');
+  const top = el('div', 'ext-top');
+  top.append(el('span', 'ext-name', item.displayName || item.id));
+  if (item.version) top.append(el('span', 'ext-ver', 'v' + item.version));
+  body.append(top, el('div', 'ext-desc', item.description || ''));
+  const meta = el('div', 'ext-meta');
+  meta.append(el('span', '', item.publisher || item.id.split('.')[0] || ''));
+  if (item.installs) meta.append(el('span', '', '· ' + fmtInstalls(item.installs)));
+  if (inst) {
+    meta.append(el('span', inst.enabled ? 'ext-badge' : 'ext-badge off', inst.enabled ? 'Enabled' : 'Disabled'));
+    for (const tg of extCapabilityTags(inst)) meta.append(el('span', 'ext-badge', tg));
+  }
+  const acts = el('div', 'ext-acts');
+  if (!inst) {
+    const btn = el('button', 'ext-btn', 'Install');
+    btn.onclick = async e => { e.stopPropagation(); await installExtFromUI(item, btn); };
+    acts.append(btn);
+  } else {
+    if (inst.enabled && inst.themes?.length) {
+      const tb = el('button', 'ext-btn', inst.themes.length === 1 && activeThemeKey === `${inst.dir}::${inst.themes[0].label}` ? 'Active Theme' : 'Apply Theme');
+      tb.onclick = e => {
+        e.stopPropagation();
+        if (inst.themes.length === 1) {
+          applyThemeByKey(`${inst.dir}::${inst.themes[0].label}`, true);
+          toast(`Applied theme "${inst.themes[0].label}".`);
+          renderExtensions();
+        } else openExtDialog(inst);
+      };
+      acts.append(tb);
+    }
+    const tg = el('button', 'ext-btn sec', inst.enabled ? 'Disable' : 'Enable');
+    tg.onclick = async e => { e.stopPropagation(); await toggleExtFromUI(inst); };
+    const un = el('button', 'ext-btn sec', 'Uninstall');
+    un.onclick = async e => { e.stopPropagation(); await uninstallExtFromUI(inst); };
+    acts.append(tg, un);
+  }
+  body.append(meta, acts);
+  row.append(body);
+  row.onclick = () => openExtDialog(inst || item);
+  return row;
+}
+
+function renderExtensions() {
+  const listEl = $('#ext-list');
+  if (!listEl) return;
+  const q = ($('#ext-q').value || '').trim().toLowerCase();
+  const instMap = new Map();
+  for (const e of installedExts) { instMap.set(e.id.toLowerCase(), e); instMap.set(e.dir.toLowerCase(), e); }
+  const filteredInst = q ? installedExts.filter(e => `${e.displayName} ${e.id} ${e.description} ${e.publisher}`.toLowerCase().includes(q)) : installedExts;
+  const out = [];
+  if (filteredInst.length) {
+    const sec = el('div', 'ext-sec'); sec.append(el('span', '', 'Installed'), el('span', 'ext-cnt', String(filteredInst.length)));
+    out.push(sec, ...filteredInst.map(it => renderExtCard(it, instMap)));
+  }
+  const mktOnly = marketExts.filter(m => !instMap.has(m.id.toLowerCase()));
+  if (mktOnly.length) {
+    const sec = el('div', 'ext-sec'); sec.append(el('span', '', 'VS Code Marketplace'), el('span', 'ext-cnt', String(mktOnly.length)));
+    out.push(sec, ...mktOnly.map(it => renderExtCard(it, instMap)));
+  }
+  if (!out.length && $('#ext-msg').hidden) out.push(el('div', 'sr-msg', 'No extensions found.'));
+  listEl.replaceChildren(...out);
+}
+
+async function searchMarketplace(q = '') {
+  const seq = ++extSearchSeq;
+  $('#ext-msg').hidden = false;
+  $('#ext-msg').textContent = q ? `Searching Marketplace for "${q}"…` : 'Loading VS Code Marketplace…';
+  try {
+    const res = await getJSON('/ext/search?q=' + enc(q));
+    if (seq !== extSearchSeq) return;
+    marketExts = res;
+    marketLoaded = true;
+    $('#ext-msg').hidden = true;
+    renderExtensions();
+  } catch (e) {
+    if (seq !== extSearchSeq) return;
+    marketExts = [];
+    $('#ext-msg').hidden = false;
+    $('#ext-msg').textContent = 'Marketplace unavailable: ' + e.message;
+    renderExtensions();
+  }
+}
+
+async function installExtFromUI(item, btn) {
+  if (btn) { btn.disabled = true; btn.replaceChildren(icon('loading', 'spin'), el('span', '', 'Installing…')); }
+  try {
+    const manifest = await (await postJSON('/ext/install', { id: item.id, vsixUrl: item.vsixUrl })).json();
+    installedExts = await getJSON('/ext/installed');
+    const live = installedExts.find(e => e.id.toLowerCase() === manifest.id.toLowerCase()) || manifest;
+    await activateExtension(live);
+    let msg = `Installed ${live.displayName} v${live.version}.`;
+    if (live.themes?.length) {
+      applyThemeByKey(`${live.dir}::${live.themes[0].label}`, true);
+      msg += ` Applied theme "${live.themes[0].label}".`;
+    }
+    toast(msg);
+    renderExtensions();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Install'; }
+    toast(e.message, 'error');
+  }
+}
+
+async function toggleExtFromUI(inst) {
+  try {
+    const next = !inst.enabled;
+    await postJSON('/ext/toggle', { id: inst.dir, enabled: next });
+    installedExts = await getJSON('/ext/installed');
+    const live = installedExts.find(e => e.dir === inst.dir);
+    if (next && live) await activateExtension(live);
+    else deactivateExtension(inst.dir);
+    renderExtensions();
+  } catch (e) { fail(e); }
+}
+
+async function uninstallExtFromUI(inst) {
+  try {
+    deactivateExtension(inst.dir);
+    await postJSON('/ext/uninstall', { id: inst.dir });
+    installedExts = await getJSON('/ext/installed');
+    toast(`Uninstalled ${inst.displayName}.`);
+    renderExtensions();
+  } catch (e) { fail(e); }
+}
+
+function closeExtDialog() { if ($('#extdlg').open) $('#extdlg').close(); }
+function openExtDialog(item) {
+  const inst = installedExts.find(e => e.id.toLowerCase() === item.id.toLowerCase()) || (item.dir ? item : null);
+  const src = inst || item;
+  $('#edlg-icon').replaceChildren(makeExtIcon(src));
+  $('#edlg-title').textContent = `${src.displayName || src.id} ${src.version ? 'v' + src.version : ''}`;
+  $('#edlg-sub').textContent = `${src.id}${src.publisher ? ' · ' + src.publisher : ''}${src.installs ? ' · ' + fmtInstalls(src.installs) + ' installs' : ''}`;
+  $('#edlg-desc').textContent = src.description || '';
+
+  const thBox = $('#edlg-themes');
+  if (inst?.enabled && inst.themes?.length) {
+    thBox.hidden = false;
+    const lbl = el('div', '', 'Click a color theme to apply in WebIDE:');
+    lbl.style.cssText = 'font-size:11.5px;color:var(--dim);margin-bottom:6px';
+    const chips = el('div', 'edlg-chips');
+    for (const t of inst.themes) {
+      const k = `${inst.dir}::${t.label}`;
+      const c = el('button', 'edlg-chip' + (activeThemeKey === k ? ' on' : ''), t.label);
+      c.onclick = () => { applyThemeByKey(k, true); openExtDialog(inst); renderExtensions(); toast(`Applied theme "${t.label}".`); };
+      chips.append(c);
+    }
+    thBox.replaceChildren(lbl, chips);
+  } else { thBox.hidden = true; thBox.replaceChildren(); }
+
+  const tags = extCapabilityTags(inst || src).map(tg => el('span', 'ext-badge', tg));
+  for (const cmd of (inst?.commands || []).slice(0, 8)) tags.push(el('span', 'ext-badge off', cmd.title || cmd.command));
+  $('#edlg-contribs').replaceChildren(...tags);
+
+  const acts = [];
+  if (!inst) {
+    const b = el('button', 'btn', 'Install');
+    b.onclick = async () => { await installExtFromUI(src, b); closeExtDialog(); };
+    acts.push(b);
+  } else {
+    const tg = el('button', 'btn sec', inst.enabled ? 'Disable' : 'Enable');
+    tg.onclick = async () => { await toggleExtFromUI(inst); closeExtDialog(); };
+    const un = el('button', 'btn sec', 'Uninstall');
+    un.onclick = async () => { await uninstallExtFromUI(inst); closeExtDialog(); };
+    acts.push(tg, un);
+  }
+  const cl = el('button', 'btn sec', 'Close'); cl.onclick = closeExtDialog;
+  acts.push(cl);
+  $('#edlg-acts').replaceChildren(...acts);
+  if (!$('#extdlg').open) $('#extdlg').showModal();
+}
+
+$('#edlg-x').onclick = closeExtDialog;
+$('#extdlg').addEventListener('cancel', e => { e.preventDefault(); closeExtDialog(); });
+lightDismiss($('#extdlg'), closeExtDialog);
+
+function openExtView() {
+  showView('ext');
+  getJSON('/ext/installed').then(list => { installedExts = list; renderExtensions(); }).catch(() => {});
+  if (!marketLoaded) searchMarketplace($('#ext-q').value.trim());
+  $('#ext-q').focus();
+}
+$('#ext-q').oninput = () => {
+  const v = $('#ext-q').value;
+  $('#ext-clear').hidden = !v;
+  renderExtensions();
+  clearTimeout(extSearchTimer);
+  extSearchTimer = setTimeout(() => searchMarketplace(v.trim()), 320);
+};
+$('#ext-q').onkeydown = e => { if (e.key === 'Enter' && !composing(e)) { clearTimeout(extSearchTimer); searchMarketplace($('#ext-q').value.trim()); } };
+$('#ext-clear').onclick = () => { $('#ext-q').value = ''; $('#ext-clear').hidden = true; searchMarketplace(''); $('#ext-q').focus(); };
+$('#ext-refresh').onclick = () => { getJSON('/ext/installed').then(list => { installedExts = list; }).catch(() => {}); searchMarketplace($('#ext-q').value.trim()); };
+$('#ext-themes').onclick = () => quickOpen('', 'theme');
+
+// ---------- boot ----------
+require.config({ paths: { vs: MONACO + '/vs' } });
+window.MonacoEnvironment = { getWorkerUrl: () => URL.createObjectURL(new Blob([`self.MonacoEnvironment={baseUrl:'${MONACO}/'};importScripts('${MONACO}/vs/base/worker/workerMain.js')`], { type: 'text/javascript' })) };
+require(['vs/editor/editor.main'], async () => {
+  monaco.editor.defineTheme('dark-modern', { base: 'vs-dark', inherit: true, rules: [], colors: {
+    'editor.background': '#060608', 'editorGutter.background': '#060608', 'minimap.background': '#060608',
+    'editorLineNumber.foreground': '#525266', 'editorLineNumber.activeForeground': '#e2e8f0', 'editor.lineHighlightBackground': '#ffffff05', 'editor.lineHighlightBorder': '#ffffff0a', 'editor.selectionBackground': '#6366f138',
+  } });
+  blankModel = monaco.editor.createModel('', 'plaintext');
+  editor = monaco.editor.create($('#ed'), {
+    model: blankModel, readOnly: true, theme: 'dark-modern', wordWrap: prefs.wrap ? 'on' : 'off', automaticLayout: true, fontFamily: 'ui-monospace, "SF Mono", Menlo, "Cascadia Mono", Consolas, monospace', fontSize: 13,
+    padding: { top: 6 }, smoothScrolling: true, cursorSmoothCaretAnimation: 'on', scrollBeyondLastLine: false, renderLineHighlight: 'all',
+  });
+  editor.onDidChangeCursorPosition(updateStatus);
+  $('#loading').remove();
+  try {
+    await loadExtensions().catch(e => console.warn('Extensions init:', e));
+    $('#agent').replaceChildren(...(await getJSON('/agents')).map(a => new Option(a, a)));
+    await loadRoot();
+  } catch (e) { fail(e); }
+}, err => { $('#loading').textContent = 'Could not load the editor (Monaco from cdnjs): ' + err.message; });
+</script>
+</body>
+</html>
