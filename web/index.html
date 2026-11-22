@@ -176,6 +176,51 @@
   .git-cinfo { min-width: 0; flex: 1; }
   .git-cmsg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .git-cmeta { font-size: 11px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* GitHub branches & commit history */
+  .gh-note { padding: 4px 20px 8px; }
+  .gh-err { display: grid; gap: 6px; justify-items: start; padding: 0 12px 10px 0; }
+  .gh-err .btn { margin-left: 20px; height: 24px; }
+  .gh-branch .codicon:first-child { color: var(--dim); flex: none; }
+  .gh-branch .codicon-check { color: var(--ok) !important; }
+  .gh-tag { flex: none; font-size: 10px; line-height: 16px; padding: 0 6px; border-radius: 4px; background: #ffffff10; color: var(--dim); font-weight: 500; text-transform: none; letter-spacing: 0; }
+  .gh-tag.cur { background: #6366f126; color: #a5b4fc; }
+  .gh-lock { color: var(--faint); font-size: 12px !important; flex: none; }
+  .gh-ctitle { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+  .gh-ctitle .gh-tag { overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+  .gh-commit { cursor: pointer; }
+  .gh-commit .gh-go { margin-left: auto; color: var(--faint); align-self: center; flex: none; }
+  .gh-more { margin: 4px 12px 10px 20px; height: 26px; }
+  .commit-view .cv-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 20px 48px; }
+  .commit-view .cv-gh { height: 24px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; flex: none; }
+  .cv-head { display: grid; gap: 10px; padding-bottom: 14px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .cv-subj { margin: 0; font-size: 18px; line-height: 1.35; color: var(--strong); font-weight: 600; overflow-wrap: anywhere; }
+  .cv-msg { margin: 0; font: 12.5px/1.55 var(--mono); color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .cv-who { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+  .cv-av { width: 22px; height: 22px; border-radius: 50%; }
+  .cv-dim { color: var(--dim); }
+  .cv-when { color: var(--dim); }
+  .cv-sha { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+  .cv-sha code { font: 12px var(--mono); color: var(--link); overflow-wrap: anywhere; user-select: all; }
+  .cv-parents { display: inline-flex; gap: 6px; align-items: center; margin-left: 8px; }
+  .cv-link { border: 0; background: none; padding: 0; color: var(--link); font: 12px var(--mono); cursor: pointer; }
+  .cv-link:hover { text-decoration: underline; }
+  .cv-stats { display: flex; gap: 10px; font-size: 12.5px; color: var(--dim); }
+  .cv-add { color: var(--ok); font: 12px var(--mono); flex: none; }
+  .cv-del { color: var(--err); font: 12px var(--mono); flex: none; }
+  .cv-file { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; overflow: hidden; background: #ffffff03; }
+  .cv-file summary { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; list-style: none; background: var(--side); font-size: 12.5px; user-select: none; }
+  .cv-file summary::-webkit-details-marker { display: none; }
+  .cv-file[open] summary { border-bottom: 1px solid var(--border); }
+  .cv-file[open] .cv-tw { transform: rotate(90deg); }
+  .cv-tw { font-size: 14px !important; color: var(--dim); transition: transform .12s; flex: none; }
+  .cv-fname { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 12px; }
+  .cv-ren { padding: 4px 12px; font: 11.5px var(--mono); }
+  .cv-file .git-st { margin-left: 0; }
+  .cv-patch { overflow-x: auto; font: 12px/1.5 var(--mono); padding: 4px 0; }
+  .cv-patch > div { white-space: pre; padding: 0 12px; min-width: max-content; }
+  .cv-patch .a { background: #34d3991a; color: #a7f3d0; }
+  .cv-patch .d { background: #f871711a; color: #fecaca; }
+  .cv-patch .h { color: var(--link); background: #38bdf80d; padding-top: 2px; padding-bottom: 2px; }
   #gitdlg .qp-in { display: grid; gap: 8px; padding: 14px; }
   #gitdlg label { display: grid; gap: 4px; font-size: 12px; color: var(--dim); }
   #gitdlg .gd-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
@@ -415,6 +460,7 @@
   #lang-sw button[aria-pressed="true"] { background: var(--grad); color: #fff; cursor: default; }
   #tabs::after { content: ''; flex: none; width: 76px; } /* keep the last tab clear of the language switch */
   #chat > .ptitle { padding-right: 80px; }
+  #main:has(#tabs[hidden]) #diff .dbar { padding-right: 84px; } /* no tab strip: the diff/commit bar is the top row */
   #dir-pick { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
   .drop-folder-hover { outline: 2px dashed var(--accent); outline-offset: -6px; }
   .mob-only { display: none; }
@@ -476,6 +522,13 @@
     #crumbs .cr-acts .cr-icon { padding: 0; width: 28px; }
     #diff .dbar { height: 40px; padding: 0 8px; gap: 6px; }
     #diff .dh { display: none; }
+    .commit-view .cv-body { padding: 14px 12px 40px; }
+    .commit-view .cv-gh span:last-child { display: none; }
+    .cv-subj { font-size: 16.5px; }
+    .cv-patch { font-size: 11.5px; }
+    .cv-patch > div { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; padding: 0 8px; }
+    .cv-file summary { padding: 9px 10px; }
+    .gh-commit { min-height: 52px; }
 
     /* Mobile project taskbar & Home / Empty screens */
     .ws-task { height: 28px; max-width: 150px; padding: 0 4px 0 8px; }
@@ -848,7 +901,17 @@ const ZH = {
   'Prettier could not be loaded (offline?)': '无法加载 Prettier（是否离线？）', 'Session unauthorized.': '会话未授权。', 'The WebIDE server is not reachable.': '无法连接 WebIDE 服务器。',
   'Auto Save on — files save 1s after you stop typing': '自动保存已开启：停止输入 1 秒后保存', 'Auto Save off': '自动保存已关闭',
   'Browser folder permission was declined. Re-open the folder or grant access when prompted.': '浏览器文件夹权限被拒绝。请重新打开文件夹，或在提示时授予访问权限。',
-  'Cannot move a folder inside itself': '不能把文件夹移动到它自身内部', 'Target already exists': '目标已存在',
+  'Cannot move a folder inside itself': '不能把文件夹移动到它自身内部',
+  // GitHub branches & commit history
+  'Branches': '分支', 'Commits': '提交', 'default': '默认', 'current': '当前', 'Loading branches…': '正在加载分支…', 'Loading commits…': '正在加载提交…',
+  'Load more commits': '加载更多提交', 'Switch to Branch': '切换到此分支', 'Switch Branch': '切换分支', 'Refresh Branches & Commits': '刷新分支和提交',
+  'Add Access Token…': '添加访问令牌…', 'Loading commit…': '正在加载提交…', 'Copy SHA': '复制 SHA', 'Parents': '父提交', 'No commits on this branch.': '此分支没有提交。',
+  'Binary file or diff too large to display.': '二进制文件或差异过大，无法显示。', 'Diff truncated (too many lines).': '差异过长，已截断。',
+  'Show history of this branch': '查看此分支的提交历史', 'View commit details': '查看提交详情',
+  'Uncommitted changes in this browser workspace will be replaced by the files of that branch.': '此浏览器工作区中未提交的更改将被该分支的文件替换。',
+  'Private repository: add a GitHub access token to see its branches and commits.': '私有仓库：添加 GitHub 访问令牌后即可查看分支和提交。',
+  'GitHub API rate limit reached (60 requests/hour without a token). Add an access token to raise it.': '已达到 GitHub API 调用上限（无令牌时每小时 60 次），添加访问令牌可提高上限。',
+  "Switching branches would overwrite files in your local folder. Use git in that folder instead; you can still browse this branch's commits here.": '切换分支会覆盖本地文件夹中的文件，请在该文件夹中使用 git 切换；这里仍可浏览该分支的提交。', 'Target already exists': '目标已存在',
   'Local folder handle': '本地目录句柄', 'Browser IndexedDB': '浏览器 IndexedDB', '— hibernated, click to wake': '— 休眠中，点击唤醒', '— running': '— 当前运行',
 };
 const ZH_RE = [
@@ -876,6 +939,11 @@ const ZH_RE = [
   [/^File not found: (.+)$/, '文件未找到：$1'],
   [/^"(.+)" already exists$/, '“$1”已存在'],
   [/^\+ Create branch "(.+)"$/, '+ 创建分支“$1”'],
+  [/^Switch to branch "(.+)"\?$/, '切换到分支“$1”？'],
+  [/^Switched to branch (.+)\.$/, '已切换到分支 $1。'],
+  [/^(\d+) files? changed$/, '$1 个文件已更改'],
+  [/^Commit ([0-9a-f]{7})$/, '提交 $1'],
+  [/^(.+) \(current\)$/, '$1（当前）'],
   [/^Toggle Word Wrap \((on|off)\)$/, (_, v) => `切换自动换行（当前${v === 'on' ? '开启' : '关闭'}）`],
 ];
 // Chinese for an English UI string, or null when it is not a known UI string.
@@ -897,7 +965,7 @@ let LANG = 'en';
 try { LANG = localStorage.webideLang || ((navigator.languages || [navigator.language]).some(l => /^zh\b/i.test(l || '')) ? 'zh' : 'en'); } catch { /* storage unavailable */ }
 if (LANG !== 'zh') LANG = 'en';
 const t = s => (LANG === 'zh' && zhOf(s)) || s;
-const I18N_SKIP = '[class*="monaco"], .xterm, #tree, #tabs, .cr-path, #outline li:not(.ol-empty), #sr-res, #probbody .pmsg, .edlg-readme, iframe, script, style, textarea, code, pre, [data-i18n-skip]';
+const I18N_SKIP = '[class*="monaco"], .xterm, #tree, #tabs, .cr-path, #outline li:not(.ol-empty), #sr-res, #probbody .pmsg, .edlg-readme, iframe, script, style, code, pre, .gh-user, [data-i18n-skip]';
 const I18N_ATTRS = ['title', 'placeholder', 'aria-label'];
 const i18nOrig = new WeakMap(); // text node -> English original
 function i18nText(n) {
@@ -950,7 +1018,7 @@ function setLang(l) {
   try { localStorage.webideLang = LANG; } catch { /* storage unavailable */ }
   applyLang();
   // Views that bake t() into their data rather than DOM text
-  renderProjectBar(); renderCrumbs();
+  renderProjectBar(); renderCrumbs(); renderGit();
   if ($('#qo').open) qoRender();
 }
 applyLang();
@@ -3193,13 +3261,14 @@ function qoRender() {
   let rows = [], msg = '';
   if (qo.mode === 'branch') {
     const q = v.trim(), ql = q.toLowerCase();
-    const list = gitState?.branches || [];
+    const remote = !!(gitState?.remote?.slug && ghHist.slug === gitState.remote.slug && ghHist.branches);
+    const list = remote ? ghHist.branches.map(b => b.name) : gitState?.branches || [];
     rows = list.filter(b => b.toLowerCase().includes(ql)).map(b => ({
-      label: b === gitState.branch ? `${b} (current)` : b,
+      label: b === gitState.branch ? t(`${b} (current)`) : b,
       pos: [],
-      run: () => gitCheckoutLocal(b),
+      run: () => (remote ? gitSwitchBranch(b).catch(fail) : gitCheckoutLocal(b)),
     }));
-    if (q && !list.includes(q)) rows.push({ label: `+ Create branch "${q}"`, pos: [], run: () => gitCheckoutLocal(q) });
+    if (q && !remote && !list.includes(q)) rows.push({ label: `+ Create branch "${q}"`, pos: [], run: () => gitCheckoutLocal(q) });
     if (!rows.length) msg = 'Type a branch name to create one.';
   } else if (qo.mode === 'theme') {
     const q = v.trim().toLowerCase();
@@ -3403,7 +3472,7 @@ function renderGit() {
   const sec = (id, title, count, actions, body) => {
     const open = !gitCollapsed.has(id);
     const head = el('div', 'section git-sec');
-    head.append(icon(open ? 'chevron-down' : 'chevron-right'), el('span', '', title), el('span', 'badge', String(count)));
+    head.append(icon(open ? 'chevron-down' : 'chevron-right'), typeof title === 'string' ? el('span', '', title) : title, ...(count == null ? [] : [el('span', 'badge', String(count))]));
     if (actions.length) {
       const box = el('span', 'actions');
       for (const a of actions) {
@@ -3446,6 +3515,7 @@ function renderGit() {
   nodes.push(...sec('changes', 'Changes', st.unstaged.length, st.unstaged.length ? [
     { icon: 'add', title: 'Stage All Changes', run: () => gitStagePaths(null, true) },
   ] : [], st.unstaged.length ? st.unstaged.map(it => itemRow(it, false)) : [el('div', 'sr-msg', 'No uncommitted changes.')]));
+  if (st.remote?.slug) nodes.push(...ghHistorySections(st, sec));
   if (gitCommits.length) {
     nodes.push(...sec('commits', 'Local Snapshot History', gitCommits.length, [], gitCommits.map(c => {
       const r = el('div', 'row git-commit');
@@ -3457,6 +3527,219 @@ function renderGit() {
     })));
   }
   list.replaceChildren(...nodes);
+  // Branches/commits come from the GitHub API: fetch once the Source Control view is actually on screen
+  if (st.remote?.slug && ghHist.slug !== st.remote.slug && !$('#view-git').hidden) ghLoadBranches().catch(() => {});
+}
+
+// ---------- GitHub branches & commit history (read-only, straight from api.github.com) ----------
+// Public repos work without a token (60 requests/hour per IP); private ones use the browser-held token.
+const ghHist = { slug: '', defaultBranch: '', branches: null, branchErr: '', needsToken: false, loadingB: false, viewBranch: '', commits: [], page: 0, more: false, loadingC: false, commitErr: '', cseq: 0 };
+const ghRepoPath = slug => { const [o, n] = slug.split('/'); return `/repos/${enc(o)}/${enc(n)}`; };
+function relTime(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  try {
+    const rtf = new Intl.RelativeTimeFormat(LANG === 'zh' ? 'zh-CN' : 'en', { numeric: 'auto' });
+    let v = (Date.now() - d) / 1000;
+    for (const [k, u] of [[60, 'second'], [60, 'minute'], [24, 'hour'], [30, 'day'], [12, 'month'], [Infinity, 'year']]) {
+      if (Math.abs(v) < k) return rtf.format(-Math.round(v), u);
+      v /= k;
+    }
+  } catch { /* old browser */ }
+  return d.toLocaleString();
+}
+async function ghLoadBranches(force = false) {
+  const slug = gitState?.remote?.slug;
+  if (!slug || (ghHist.loadingB && ghHist.slug === slug)) return;
+  if (ghHist.slug !== slug) Object.assign(ghHist, { slug, defaultBranch: '', branches: null, branchErr: '', needsToken: false, viewBranch: '', commits: [], page: 0, more: false, commitErr: '' });
+  else if (ghHist.branches && !force) return;
+  ghHist.loadingB = true; ghHist.branchErr = ''; renderGit();
+  try {
+    const repo = await (await ghFetch(ghRepoPath(slug))).json();
+    const list = [];
+    for (let page = 1; page <= 5; page++) {
+      const arr = await (await ghFetch(`${ghRepoPath(slug)}/branches?per_page=100&page=${page}`)).json();
+      list.push(...arr.map(b => ({ name: b.name, sha: b.commit?.sha || '', protected: !!b.protected })));
+      if (arr.length < 100) break;
+    }
+    if (ghHist.slug !== slug) return;
+    ghHist.defaultBranch = repo.default_branch || '';
+    const cur = gitState?.branch, rank = b => b.name === ghHist.defaultBranch ? 0 : b.name === cur ? 1 : 2;
+    ghHist.branches = list.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+    if (!ghHist.viewBranch || !list.some(b => b.name === ghHist.viewBranch)) ghHist.viewBranch = list.some(b => b.name === cur) ? cur : ghHist.defaultBranch || list[0]?.name || '';
+  } catch (e) {
+    if (ghHist.slug !== slug) return;
+    ghHist.needsToken = !ghToken && (e.status === 404 || e.status === 401);
+    ghHist.branchErr = ghHist.needsToken ? 'Private repository: add a GitHub access token to see its branches and commits.' : e.message;
+  } finally {
+    if (ghHist.slug === slug) ghHist.loadingB = false;
+  }
+  renderGit();
+  if (ghHist.viewBranch) await ghLoadCommits(true);
+}
+async function ghLoadCommits(reset = false) {
+  const { slug, viewBranch } = ghHist;
+  if (!slug || !viewBranch) return;
+  if (reset) Object.assign(ghHist, { commits: [], page: 0, more: false });
+  const seq = ++ghHist.cseq;
+  ghHist.loadingC = true; ghHist.commitErr = ''; renderGit();
+  try {
+    const arr = await (await ghFetch(`${ghRepoPath(slug)}/commits?sha=${enc(viewBranch)}&per_page=30&page=${ghHist.page + 1}`)).json();
+    if (seq !== ghHist.cseq) return;
+    ghHist.commits.push(...arr); ghHist.page++; ghHist.more = arr.length === 30;
+  } catch (e) {
+    if (seq === ghHist.cseq) ghHist.commitErr = e.message;
+  }
+  if (seq !== ghHist.cseq) return;
+  ghHist.loadingC = false; renderGit();
+}
+function ghHistorySections(st, sec) {
+  const h = ghHist, cur = st.branch, proj = activeProj();
+  const note = (text, cls = '') => el('div', 'sr-msg gh-note ' + cls, text);
+  const errBody = msg => {
+    const box = el('div', 'gh-err'); box.append(note(msg, 'err'));
+    if (h.needsToken || /token/i.test(msg)) {
+      const b = el('button', 'btn sec', 'Add Access Token…');
+      b.onclick = () => { openGitDialog('remote'); $('#gd-auth').open = true; $('#gd-tok').focus(); };
+      box.append(b);
+    }
+    return [box];
+  };
+  let bBody;
+  if (h.branchErr) bBody = errBody(h.branchErr);
+  else if (!h.branches) bBody = [note('Loading branches…')];
+  else bBody = h.branches.map(b => {
+    const r = el('div', 'row git-row gh-branch' + (b.name === h.viewBranch ? ' sel' : ''));
+    r.title = 'Show history of this branch';
+    r.append(icon(b.name === cur ? 'check' : 'git-branch'), el('span', 'name', b.name));
+    if (b.name === h.defaultBranch) r.append(el('span', 'gh-tag', 'default'));
+    if (b.name === cur) r.append(el('span', 'gh-tag cur', 'current'));
+    if (b.protected) r.append(icon('lock', 'gh-lock'));
+    if (b.name !== cur && proj?.kind !== 'fsa') {
+      const act = el('span', 'actions'), sw = el('button', 'ibtn'); sw.title = 'Switch to Branch'; sw.append(icon('arrow-swap'));
+      sw.onclick = e => { e.stopPropagation(); gitSwitchBranch(b.name).catch(fail); };
+      act.append(sw); r.append(act);
+    }
+    r.onclick = () => { if (h.viewBranch === b.name) return; h.viewBranch = b.name; gitCollapsed.delete('gh-commits'); ghLoadCommits(true).catch(() => {}); };
+    return r;
+  });
+  const out = sec('gh-branches', 'Branches', h.branches ? h.branches.length : null,
+    [{ icon: 'refresh', title: 'Refresh Branches & Commits', run: () => ghLoadBranches(true).catch(() => {}) }], bBody);
+  if (h.branchErr || !h.branches) return out;
+  const title = el('span', 'gh-ctitle'); title.append(el('span', '', 'Commits'), el('span', 'gh-tag cur gh-user', h.viewBranch));
+  const cBody = h.commits.map(c => {
+    const r = el('div', 'row git-commit gh-commit');
+    const [subject] = (c.commit?.message || '').split('\n');
+    const who = c.author?.login || c.commit?.author?.name || '';
+    r.title = 'View commit details';
+    const info = el('div', 'git-cinfo'), meta = el('div', 'git-cmeta gh-user');
+    meta.textContent = `${who} · ${relTime(c.commit?.author?.date || c.commit?.committer?.date)}`;
+    info.append(el('div', 'git-cmsg gh-user', subject), meta);
+    r.append(el('span', 'git-hash', c.sha.slice(0, 7)), info, icon('chevron-right', 'gh-go'));
+    r.onclick = () => openCommitView(h.slug, c.sha).catch(fail);
+    return r;
+  });
+  if (h.commitErr) cBody.push(...errBody(h.commitErr));
+  else if (h.loadingC) cBody.push(note('Loading commits…'));
+  else if (!h.commits.length) cBody.push(note('No commits on this branch.'));
+  else if (h.more) { const b = el('button', 'btn sec gh-more', 'Load more commits'); b.onclick = () => ghLoadCommits().catch(() => {}); cBody.push(b); }
+  return [...out, ...sec('gh-commits', title, null, [], cBody)];
+}
+// Full-screen commit details in the editor area: message, author, parents, stats and a colored diff per file.
+async function openCommitView(slug, sha) {
+  showHome(false);
+  if (isMobileUI() && mobDrawer) { mobDrawer = false; layout(); }
+  closeCompare();
+  const box = el('div', 'commit-view'); box.id = 'diff';
+  const x = el('button', 'ibtn'); x.title = 'Close'; x.append(icon('close')); x.onclick = () => closeCompare();
+  const gh = el('a', 'btn sec cv-gh'); gh.href = `https://github.com/${slug}/commit/${sha}`; gh.target = '_blank'; gh.rel = 'noopener'; gh.append(icon('github'), el('span', '', 'Open on GitHub'));
+  const bar = el('div', 'dbar');
+  bar.append(icon('git-commit'), el('span', 'dt', `Commit ${sha.slice(0, 7)}`), el('span', 'sp'), gh, x);
+  const body = el('div', 'cv-body');
+  body.append(el('div', 'sr-msg', 'Loading commit…'));
+  box.append(bar, body); $('#edwrap').append(box);
+  diff = { kind: 'commit', rel: null, de: { dispose() {} }, box };
+  try {
+    const c = await (await ghFetch(`${ghRepoPath(slug)}/commits/${enc(sha)}`)).json();
+    if (diff?.box === box) renderCommitDetail(body, c, slug);
+  } catch (e) {
+    if (diff?.box === box) body.replaceChildren(el('div', 'sr-msg err', e.message));
+  }
+}
+function renderCommitDetail(body, c, slug) {
+  const [subject, ...rest] = (c.commit?.message || '').split('\n');
+  const msgRest = rest.join('\n').trim();
+  const head = el('div', 'cv-head');
+  head.append(el('h2', 'cv-subj gh-user', subject));
+  if (msgRest) head.append(el('pre', 'cv-msg', msgRest));
+  const who = el('div', 'cv-who gh-user');
+  if (c.author?.avatar_url) { const img = el('img', 'cv-av'); img.src = c.author.avatar_url + '&s=48'; img.alt = ''; img.referrerPolicy = 'no-referrer'; who.append(img); }
+  const date = c.commit?.author?.date || c.commit?.committer?.date;
+  const when = el('span', 'cv-when', relTime(date)); when.title = new Date(date).toLocaleString();
+  who.append(el('b', '', c.commit?.author?.name || c.author?.login || ''), ...(c.author?.login && c.author.login !== c.commit?.author?.name ? [el('span', 'cv-dim', '@' + c.author.login)] : []), when);
+  head.append(who);
+  const shaRow = el('div', 'cv-sha');
+  const cp = el('button', 'ibtn'); cp.title = 'Copy SHA'; cp.append(icon('copy')); cp.onclick = () => copy(c.sha);
+  shaRow.append(el('code', '', c.sha), cp);
+  if (c.parents?.length) {
+    const par = el('span', 'cv-parents'); par.append(el('span', 'cv-dim', 'Parents'));
+    for (const p of c.parents) { const a = el('button', 'cv-link', p.sha.slice(0, 7)); a.onclick = () => openCommitView(slug, p.sha).catch(fail); par.append(a); }
+    shaRow.append(par);
+  }
+  head.append(shaRow);
+  const files = c.files || [];
+  const stats = el('div', 'cv-stats');
+  stats.append(el('span', '', `${files.length} ${files.length === 1 ? 'file' : 'files'} changed`), el('span', 'cv-add', '+' + (c.stats?.additions ?? 0)), el('span', 'cv-del', '−' + (c.stats?.deletions ?? 0)));
+  head.append(stats);
+  const ST = { added: 'A', removed: 'D', modified: 'M', renamed: 'R', copied: 'C', changed: 'M', unchanged: 'U' };
+  const fileNodes = files.map((f, i) => {
+    const d = el('details', 'cv-file');
+    const lines = f.patch ? f.patch.split('\n') : [];
+    d.open = i < 8 && lines.length < 400;
+    const sum = el('summary');
+    const name = el('span', 'cv-fname gh-user'), slash = f.filename.lastIndexOf('/');
+    if (slash > 0) name.append(el('span', 'cv-dim', f.filename.slice(0, slash + 1)));
+    name.append(f.filename.slice(slash + 1));
+    const st = ST[f.status] || 'M';
+    sum.append(icon('chevron-right', 'cv-tw'), el('span', `git-st ${st}`, st), name, el('span', 'cv-add', '+' + f.additions), el('span', 'cv-del', '−' + f.deletions));
+    d.append(sum);
+    if (f.previous_filename) d.append(el('div', 'cv-ren cv-dim gh-user', `${f.previous_filename} → ${f.filename}`));
+    if (!f.patch) { d.append(el('div', 'sr-msg', 'Binary file or diff too large to display.')); return d; }
+    const pre = el('div', 'cv-patch'), MAX = 3000;
+    // Render lazily on first open so commits touching hundreds of files stay fast
+    const fill = () => {
+      if (pre.childElementCount) return;
+      const frag = document.createDocumentFragment();
+      for (const ln of lines.slice(0, MAX)) frag.append(el('div', ln.startsWith('@@') ? 'h' : ln[0] === '+' ? 'a' : ln[0] === '-' ? 'd' : '', ln || ' '));
+      pre.append(frag);
+      if (lines.length > MAX) d.append(el('div', 'sr-msg', 'Diff truncated (too many lines).'));
+    };
+    d.addEventListener('toggle', () => { if (d.open) fill(); });
+    if (d.open) fill();
+    d.append(pre);
+    return d;
+  });
+  body.replaceChildren(head, ...fileNodes);
+}
+async function gitSwitchBranch(branch) {
+  const proj = activeProj();
+  if (!proj?.remote?.slug) return toast('Connect a GitHub remote first.', 'warn');
+  if (proj.kind === 'fsa') return toast("Switching branches would overwrite files in your local folder. Use git in that folder instead; you can still browse this branch's commits here.", 'warn');
+  const dirty = (gitState?.staged.length || 0) + (gitState?.unstaged.length || 0) + [...tabs.values()].filter(isDirty).length;
+  if (dirty) {
+    const v = await modal(t(`Switch to branch "${branch}"?`), t('Uncommitted changes in this browser workspace will be replaced by the files of that branch.'),
+      [{ label: t('Cancel'), value: 'cancel' }, { label: t('Switch Branch'), value: 'ok', primary: true }]);
+    if (v !== 'ok') return;
+  }
+  const old = proj.branch;
+  proj.branch = branch;
+  try { await gitPullFromGithub({ quiet: true }); } catch (e) { proj.branch = old; throw e; }
+  proj.branches = [...new Set([branch, ...(proj.branches || [])])];
+  await dbPut('projects', serializeProjMeta(proj));
+  ghHist.viewBranch = branch;
+  await refreshGit(true);
+  ghLoadCommits(true).catch(() => {});
+  toast(`Switched to branch ${branch}.`);
 }
 async function openGitDiff(rel, staged) {
   showHome(false);
@@ -3604,7 +3887,7 @@ async function ghFetch(path, { accept = 'application/vnd.github+json', method = 
   let r;
   try {
     r = await fetch(GH_API + path, { method, body, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer',
-      headers: { accept, authorization: 'Bearer ' + ghToken, ...(body && { 'content-type': 'application/json' }) } });
+      headers: { accept, ...(ghToken && { authorization: 'Bearer ' + ghToken }), ...(body && { 'content-type': 'application/json' }) } });
   } catch { throw new Error('Could not reach api.github.com from this browser (offline, or blocked by a network filter).'); }
   if (r.ok) return r;
   let msg = '';
@@ -3613,7 +3896,7 @@ async function ghFetch(path, { accept = 'application/vnd.github+json', method = 
   throw Object.assign(new Error(
     r.status === 401 ? 'GitHub rejected the access token (401: invalid or expired). Enter a new token in the GitHub dialog.'
     : r.status === 404 ? 'Repository or branch not found on GitHub (404). Check the name, and that the token has read access to this repository (fine-grained token: Contents + Metadata, read-only).'
-    : rate ? 'GitHub API rate limit reached for this token. Try again later.'
+    : rate ? (ghToken ? 'GitHub API rate limit reached for this token. Try again later.' : 'GitHub API rate limit reached (60 requests/hour without a token). Add an access token to raise it.')
     : r.status === 403 ? `GitHub refused the request (403): ${msg || 'missing permission'}${/SAML|SSO/i.test(msg) ? ' — authorize the token for your organization (SAML SSO) on GitHub.' : ''}`
     : `GitHub API error ${r.status}${msg ? ': ' + msg : ''}`), { status: r.status });
 }
@@ -3723,7 +4006,7 @@ async function cloneGithubIntoBrowser(slug, branch = '', progress) {
   showView('explorer');
   toast(`Cloned ${meta.private ? 'private repo ' : ''}${slug} (${fileRecs.length} files) strictly into browser IndexedDB.${skipped ? ` ${skipped} oversized file(s) skipped.` : ''}`);
 }
-async function gitPullFromGithub() {
+async function gitPullFromGithub({ quiet = false } = {}) {
   const proj = activeProj();
   if (!proj?.remote?.slug) return toast('Connect a GitHub remote first.', 'warn');
   const slug = proj.remote.slug;
@@ -3752,10 +4035,11 @@ async function gitPullFromGithub() {
   await renderTree().catch(() => {});
   await reloadClean();
   await refreshGit(true);
-  toast(`Pulled latest snapshot from ${slug} into browser storage.`);
+  if (!quiet) toast(`Pulled latest snapshot from ${slug} into browser storage.`);
 }
-function gitBranchPicker() {
+async function gitBranchPicker() {
   if (!gitState?.isRepo) return toast('Initialize a repository snapshot first.', 'warn');
+  if (gitState.remote?.slug && (ghHist.slug !== gitState.remote.slug || !ghHist.branches)) await ghLoadBranches().catch(() => {});
   quickOpen('', 'branch');
 }
 let gdMode = 'clone';

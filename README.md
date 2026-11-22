@@ -100,6 +100,7 @@ docker compose up -d --build
 - **Markdown 侧边实时预览**：打开 `.md` 文件时支持通过面包屑栏开关或右键菜单开启右侧实时渲染预览（含双向滚动同步）。
 - **Auto Save 与 Local File History**：支持切换 **Auto Save** 自动保存，以及在浏览器内保存与回溯单文件编辑历史快照并查看 Diff。
 - **浏览器侧 Diff 与本地快照提交**：通过比对当前工作区文件与 IndexedDB `snapshots` 基线自动识别新增/修改/删除文件，点击即可在 Monaco DiffEditor 查看对比，支持暂存、取消暂存、丢弃更改、本地提交记录、从 GitHub 拉取更新，以及点击 **Export ZIP** 纯前端打包导出整个工程。
+- **GitHub 分支与提交历史**：关联 GitHub 远程的工程，在源代码管理中会显示 **分支** 列表（标注默认 / 当前 / 受保护分支）和所选分支的 **提交** 历史（每页 30 条，可加载更多）。点击分支只查看它的历史，点击 ⇄ 才会切换工作区到该分支（有未提交更改时先确认；本地文件夹工程不提供切换，以免覆盖磁盘文件）。点击提交会在编辑区打开详情：完整提交信息、作者与时间、SHA（可复制）、父提交（可跳转）、增删统计和每个文件的彩色 Diff（手机端自动换行）。数据由浏览器直接请求 GitHub API：公开仓库无需令牌（每小时 60 次），私有仓库使用已保存的访问令牌。
 - **浏览器内置沙箱终端**：基于 `xterm.js` 提供纯前端命令环境（`help`、`pwd`、`ls`、`cd`、`cat`、`head`、`touch`、`mkdir`、`rm`、`find`、`git status|log`、`ext list`、`clear`），仅操作当前浏览器工作区。
 - **输入法与弹窗交互安全**：全输入框支持 `composing(e)` 防 IME 误触；`quickOpen()` 打开前自动清除触发按钮焦点并延迟关闭执行，避免 `Enter` 关闭弹窗时误二次触发开启按钮。
 
@@ -223,6 +224,7 @@ Built-in zero-password abuse protection:
 - **Live Side-by-Side Markdown Preview**: Renders `.md` files in a toggleable live preview pane (`#mdpv`) with synchronized editor scrolling.
 - **Auto Save & Local File History**: Supports toggleable **Auto Save** plus browser-local revision snapshots with one-click diff inspection.
 - **In-Browser Diff & Snapshot History**: Computes added/modified/deleted files against IndexedDB `snapshots`, displays diffs in Monaco DiffEditor, supports staging, unstaging, discarding changes, local commits, pulling GitHub updates, and downloading the workspace directly as a `.zip` archive via **Export ZIP**.
+- **GitHub Branches & Commit History**: Projects with a GitHub remote show a **Branches** list (default / current / protected marked) and the **Commits** of the selected branch (30 per page, load more) in Source Control. Tapping a branch only browses its history; the ⇄ button switches the workspace to it (with a confirmation when there are uncommitted changes; not offered for local-folder projects so disk files are never overwritten). Tapping a commit opens a full-screen detail view: full message, author and time, copyable SHA, clickable parents, +/− stats and a colored per-file diff that wraps on phones. Data comes straight from the GitHub API in the browser: public repos need no token (60 requests/hour), private repos use the saved access token.
 - **In-Browser Sandbox Terminal**: Powers `xterm.js` with client-side workspace commands (`help`, `pwd`, `ls`, `cd`, `cat`, `head`, `touch`, `mkdir`, `rm`, `find`, `git status|log`, `ext list`, `clear`) without any server shell access.
 - **IME & Modal Reliability**: All inputs use `composing(e)` to prevent CJK IME confirmation misfires, and `quickOpen()` blurs trigger buttons prior to `showModal()` so `Enter` dismissal never re-activates the opener button.
 
