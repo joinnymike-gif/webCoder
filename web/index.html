@@ -699,9 +699,9 @@ async function api(p, o = {}) {
   const send = () => fetch(p, { ...o, headers: { ...(token && { authorization: 'Bearer ' + token }), ...o.headers } });
   let r;
   try { r = await send(); }
-  catch { throw new Error('The local WebIDE server is not reachable.'); }
+  catch { throw new Error('The WebIDE server is not reachable.'); }
   if (r.status === 401 && await ensureToken()) {
-    try { r = await send(); } catch { throw new Error('The local WebIDE server is not reachable.'); }
+    try { r = await send(); } catch { throw new Error('The WebIDE server is not reachable.'); }
   }
   if (r.status === 401) throw new Error('Session unauthorized.');
   if (!r.ok) throw Object.assign(new Error((await r.text()) || r.statusText), { status: r.status });
@@ -711,8 +711,8 @@ const getJSON = async p => (await api(p)).json();
 const postJSON = (p, o) => api(p, { method: 'POST', body: JSON.stringify(o) });
 // Monaco rejects internal promises with "Canceled" when models are swapped; that is noise, not an error.
 addEventListener('unhandledrejection', e => { if (e.reason?.name === 'Canceled') e.preventDefault(); });
-// Keep the server from idling out while this page is open (it quits after 30 idle minutes).
-setInterval(() => fetch('/health').catch(() => toast('The local WebIDE server is not reachable.', 'warn')), 5 * 60_000);
+// Keep the server from idling out while this page is open.
+setInterval(() => fetch('/health').catch(() => toast('The WebIDE server is not reachable.', 'warn')), 5 * 60_000);
 
 // ---------- toasts ----------
 function toast(text, kind = 'info') {

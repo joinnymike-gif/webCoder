@@ -1,0 +1,7 @@
+{$WEBIDE_DOMAIN:localhost} {
+	encode gzip
+
+	reverse_proxy webide:47321 {
+		header_up X-Real-IP {remote_host}
+	}
+}

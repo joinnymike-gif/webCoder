@@ -1,0 +1,38 @@
+services:
+  webide:
+    build: .
+    restart: unless-stopped
+    environment:
+      WEBIDE_HOST: 0.0.0.0
+      WEBIDE_PORT: 47321
+      WEBIDE_PUBLIC_HOSTS: ${WEBIDE_PUBLIC_HOSTS:-localhost}
+      WEBIDE_ORIGINS: ${WEBIDE_ORIGINS:-}
+      WEBIDE_TRUST_PROXY: "1"
+      WEBIDE_RL_PAGE: ${WEBIDE_RL_PAGE:-120}
+      WEBIDE_RL_SESSION: ${WEBIDE_RL_SESSION:-20}
+      WEBIDE_RL_PROXY: ${WEBIDE_RL_PROXY:-60}
+      WEBIDE_RL_DL: ${WEBIDE_RL_DL:-15}
+      WEBIDE_RL_DL_MB: ${WEBIDE_RL_DL_MB:-500}
+    expose:
+      - "47321"
+    mem_limit: 512m
+    # Later when adding a user/auth database, mount a persistent volume or attach a db service here.
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - webide
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      WEBIDE_DOMAIN: ${WEBIDE_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

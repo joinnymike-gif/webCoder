@@ -1,9 +1,11 @@
 // Self-check: node test/test.mjs
 // Verifies stateless server security, zero server-side storage, CORS/CSRF guards,
+// public host allowlisting, anti-crawler rules, token UA/IP binding, IP rate limits,
 // and removal of cross-client server filesystem/extension/shell endpoints.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,36 +20,72 @@ const scripts = html.match(/<script>([\s\S]*?)<\/script>/g) || [];
 assert.ok(scripts.length >= 1, 'web/index.html has inline script');
 for (const s of scripts) new Function(s.replace(/^<script>|<\/script>$/g, ''));
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function waitReady(baseUrl) {
+  for (let i = 0; i < 50; i++) {
+    try { const r = await fetch(baseUrl + '/health'); if (r.ok) return; } catch {}
+    await sleep(100);
+  }
+  throw new Error('Bridge did not become ready: ' + baseUrl);
+}
+
+function rawHttp(port, reqPath, method = 'GET', headers = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, path: reqPath, method, headers }, res => {
+      let body = '';
+      res.on('data', d => body += d);
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 const PORT = 47399, B = `http://127.0.0.1:${PORT}`;
 const bridge = spawn(process.execPath, [path.join(rootDir, 'bridge.mjs')], {
   env: { ...process.env, HOME: home, WEBIDE_PORT: PORT },
   stdio: 'inherit',
 });
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+let prodBridge = null;
 try {
-  for (let i = 0; i < 50; i++) {
-    try { const r = await fetch(B + '/health'); if (r.ok) break; } catch {}
-    await sleep(100);
-  }
-
+  await waitReady(B);
   const f = (p, o = {}) => fetch(B + p, o);
 
-  // Page & CSP
+  // Page, CSP & security/robots headers
   const page = await f('/');
   assert.equal(page.status, 200, 'serves index.html');
   const csp = page.headers.get('content-security-policy') || '';
-  assert.ok(csp.includes("script-src") && csp.includes("blob:") && !csp.includes("'unsafe-eval'"), 'CSP allows blob scripts without unsafe-eval');
+  assert.ok(csp.includes('script-src') && csp.includes('blob:') && !csp.includes("'unsafe-eval'"), 'CSP allows blob scripts without unsafe-eval');
+  assert.equal(page.headers.get('x-frame-options'), 'DENY');
+  assert.ok((page.headers.get('x-robots-tag') || '').includes('noindex'));
 
-  // Session & CORS/CSRF guards
+  const robots = await f('/robots.txt');
+  assert.equal(robots.status, 200, 'serves robots.txt');
+  assert.ok((await robots.text()).includes('Disallow: /'));
+
+  // Anti-crawler blocking
+  for (const botUa of ['python-requests/2.31.0', 'Scrapy/2.11', 'Mozilla/5.0 (compatible; GPTBot/1.0)', 'curl/8.7.1']) {
+    const r = await f('/', { headers: { 'user-agent': botUa } });
+    assert.equal(r.status, 403, `blocks bot UA on /: ${botUa}`);
+    const rs = await f('/session', { method: 'POST', headers: { origin: B, 'sec-fetch-site': 'same-origin', 'user-agent': botUa } });
+    assert.equal(rs.status, 403, `blocks bot UA on /session: ${botUa}`);
+  }
+  assert.equal((await f('/health', { headers: { 'user-agent': 'curl/8.7.1' } })).status, 200, '/health stays reachable for monitors');
+
+  // Session, token UA binding, & CORS/CSRF guards
   assert.equal((await f('/proxy/ext/search?q=dracula')).status, 401, 'proxy requires bearer token');
   assert.equal((await f('/session', { method: 'POST', headers: { origin: 'http://evil.test', 'sec-fetch-site': 'cross-site' } })).status, 403, 'rejects cross-origin session');
   assert.equal((await f('/proxy/ext/search', { headers: { origin: 'http://evil.test' } })).status, 403, 'rejects bad origin');
-  const sRes = await f('/session', { method: 'POST', headers: { origin: B, 'sec-fetch-site': 'same-origin' } });
+  const BROWSER_UA = 'Mozilla/5.0 TestBrowser/1.0';
+  const sRes = await f('/session', { method: 'POST', headers: { origin: B, 'sec-fetch-site': 'same-origin', 'user-agent': BROWSER_UA } });
   assert.equal(sRes.status, 200, 'issues same-origin session');
   const { token, mode } = await sRes.json();
   assert.equal(mode, 'browser-only');
-  const H = { authorization: 'Bearer ' + token };
+  const H = { authorization: 'Bearer ' + token, 'user-agent': BROWSER_UA };
+
+  // Replaying token with mismatched UA is rejected
+  assert.equal((await f('/proxy/ext/search?q=test', { headers: { authorization: 'Bearer ' + token, 'user-agent': 'Mozilla/5.0 DifferentBrowser/2.0' } })).status, 401, 'rejects token with mismatched UA');
 
   // Ensure server-side storage / FS / shell / agent / git / ext endpoints are completely gone
   for (const gone of ['/root', '/projects', '/fs/browse', '/fs/tree', '/fs/file?path=x', '/fs/search?q=a', '/git/status', '/ext/installed', '/agents']) {
@@ -63,11 +101,41 @@ try {
   assert.equal((await f('/proxy/github/meta?repo=' + encodeURIComponent('../../etc/passwd'), { headers: H })).status, 400, 'rejects invalid repo slug');
   assert.equal((await f('/proxy/github/archive?repo=octocat/Hello-World&branch=..', { headers: H })).status, 400, 'rejects traversal branch');
 
+  // Verify public host allowlist, reverse-proxy client IP resolution, & 429 rate limiting
+  const PROD_PORT = 47400;
+  prodBridge = spawn(process.execPath, [path.join(rootDir, 'bridge.mjs')], {
+    env: {
+      ...process.env,
+      HOME: home,
+      WEBIDE_PORT: PROD_PORT,
+      WEBIDE_PUBLIC_HOSTS: 'ide.example.com',
+      WEBIDE_TRUST_PROXY: '1',
+      WEBIDE_RL_PAGE: '2',
+      WEBIDE_RL_SESSION: '2',
+    },
+    stdio: 'pipe',
+  });
+  await waitReady(`http://127.0.0.1:${PROD_PORT}`);
+
+  const badHost = await rawHttp(PROD_PORT, '/', 'GET', { host: 'evil.example.com', 'user-agent': BROWSER_UA });
+  assert.equal(badHost.status, 403, 'rejects non-allowlisted public Host');
+
+  const okHost1 = await rawHttp(PROD_PORT, '/', 'GET', { host: 'ide.example.com', 'user-agent': BROWSER_UA, 'x-real-ip': '203.0.113.10' });
+  const okHost2 = await rawHttp(PROD_PORT, '/', 'GET', { host: 'ide.example.com', 'user-agent': BROWSER_UA, 'x-real-ip': '203.0.113.10' });
+  const rlHit = await rawHttp(PROD_PORT, '/', 'GET', { host: 'ide.example.com', 'user-agent': BROWSER_UA, 'x-real-ip': '203.0.113.10' });
+  const otherIp = await rawHttp(PROD_PORT, '/', 'GET', { host: 'ide.example.com', 'user-agent': BROWSER_UA, 'x-real-ip': '203.0.113.11' });
+  assert.equal(okHost1.status, 200);
+  assert.equal(okHost2.status, 200);
+  assert.equal(rlHit.status, 429, 'enforces per-IP rate limit');
+  assert.ok(Number(rlHit.headers['retry-after']) >= 1, 'includes Retry-After header on 429');
+  assert.equal(otherIp.status, 200, 'isolates rate limit bucket by client IP');
+
   // Verify ZERO files/folders were created on the server (stateless host)
   assert.deepEqual(fs.readdirSync(home), [], 'server never writes user files or state to disk');
 
   console.log('OK: stateless browser-local bridge self-check passed');
 } finally {
   bridge.kill();
+  prodBridge?.kill();
   fs.rmSync(home, { recursive: true, force: true });
 }

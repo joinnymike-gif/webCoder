@@ -19,7 +19,9 @@
 | [bridge.mjs](bridge.mjs) | 无状态本地 HTTP 服务与公共 CORS 透传代理（默认监听 `127.0.0.1:47321`），仅负责托管前端页面及转发对 VS Code Marketplace / Open VSX / GitHub 公开只读资源的请求；**不读写服务器本地目录、不保存状态、不生成服务端 Shell/进程** |
 | [web/index.html](web/index.html) | WebIDE 前端单页应用，内置 IndexedDB 虚拟文件系统（`webide-browser-v1`）、File System Access API 本地目录接入、纯前端 ZIP 解包/导出、极简首页、资源管理器、全文搜索、浏览器侧 Source Control、VS Code 插件市场与扩展宿主、多工程任务栏、Monaco 编辑器、Diff 视图与浏览器沙箱终端 |
 | [site/launch.html](site/launch.html) | 独立入口页，点击 **Open WebIDE** 直接跳转到本地 IDE 服务地址 `http://127.0.0.1:47321/` |
-| [test/test.mjs](test/test.mjs) | 端到端自检脚本，验证无状态服务端安全策略、零磁盘持久化、`blob:` CSP、同源 Session 校验、SSRF/路径穿越拦截以及旧版服务端文件/终端/插件写接口已彻底移除 |
+| [Dockerfile](Dockerfile) / [docker-compose.yml](docker-compose.yml) / [Caddyfile](Caddyfile) | 容器化单机部署配置（Node 22 Alpine + Caddy 自动 HTTPS 反向代理，内存限制 512MB） |
+| [.env.example](.env.example) | 公网部署与反爬虫/IP 限流环境变量模板 |
+| [test/test.mjs](test/test.mjs) | 端到端自检脚本，验证无状态服务端安全策略、零磁盘持久化、`blob:` CSP、公网 Host 校验、反爬虫与 IP 限流及旧版写接口移除 |
 | [test/mock-acp.mjs](test/mock-acp.mjs) | 保留的测试用 Mock ACP 脚本（当前浏览器隐私模式下默认不启用服务端 Agent 执行） |
 
 ### 快速启动
@@ -36,10 +38,25 @@
    ```
    如需独立静态启动页，也可运行 `python3 -m http.server 8000 -d site` 后访问 `http://localhost:8000/launch.html`。
 
+#### 公网容器部署（方案二：Docker + Caddy 自动 HTTPS）
+
+```sh
+cp .env.example .env
+# 修改 .env 中的 WEBIDE_DOMAIN 与 WEBIDE_PUBLIC_HOSTS 为你的域名（如 ide.example.com）
+docker compose up -d --build
+```
+
+内置零鉴权防护（无需密码即可直接打开，同时防止代理带宽被刷）：
+- **简单反爬虫**：提供 `GET /robots.txt`（`Disallow: /`）与 `X-Robots-Tag: noindex, nofollow, noarchive`；拦截常见爬虫/脚本 UA（`GPTBot`、`Scrapy`、`python-requests`、`curl` 等）访问主页面及代理接口；`/session` Token 绑定客户端 IP 与 UA 哈希（2 小时滑动失效），无法跨机器盗刷。
+- **单 IP 频率与流量限制**：触发上限返回 `429` 与 `Retry-After`（页面 `WEBIDE_RL_PAGE=120`/分钟、会话 `WEBIDE_RL_SESSION=20`/分钟、搜索/元信息 `WEBIDE_RL_PROXY=60`/分钟、ZIP/VSIX 下载 `WEBIDE_RL_DL=15`/分钟且单 IP 每 10 分钟下载总量上限 `WEBIDE_RL_DL_MB=500` MB）。
+
 #### 环境变量与浏览器存储分布
-- `WEBIDE_PORT`：HTTP 服务监听端口，默认 `47321`。
-- `WEBIDE_HOST`：服务绑定地址，默认 `127.0.0.1`。
+- `WEBIDE_PORT` / `PORT`：HTTP 服务监听端口，默认 `47321`。
+- `WEBIDE_HOST`：服务绑定地址，默认 `127.0.0.1`（容器部署设为 `0.0.0.0`）。
+- `WEBIDE_PUBLIC_HOSTS`：允许公网访问的域名白名单（逗号分隔，如 `ide.example.com,www.ide.example.com`）。
+- `WEBIDE_TRUST_PROXY`：置于 Caddy/Nginx/Cloudflare 后方时设为 `1`，用于安全解析真实客户端 IP（`X-Real-IP` / `CF-Connecting-IP`）。
 - `WEBIDE_ORIGINS`：允许访问的额外来源列表（逗号分隔）。
+- `WEBIDE_RL_PAGE` / `WEBIDE_RL_SESSION` / `WEBIDE_RL_PROXY` / `WEBIDE_RL_DL` / `WEBIDE_RL_DL_MB`：按单 IP 调节限流阈值。
 - **浏览器端 IndexedDB（`webide-browser-v1`）**：按浏览器 Profile 与 Origin 严格隔离，包含 `projects`（工程元数据与本地 `FileSystemDirectoryHandle`）、`files`（GitHub 克隆及浏览器导入文件内容）、`snapshots`（浏览器侧基线快照）、`extensions`（已下载并解包的 VS Code 插件与主题/语法/片段/Web Bundle）和 `meta`（多工程顺序与活跃状态）。
 - **浏览器端 `localStorage`**：仅保存布局偏好（`webidePrefs`）、当前配色主题键（`webideTheme`）与扩展配置键值。
 
@@ -118,7 +135,9 @@ A lightweight, privacy-first browser IDE where **all user data—workspaces, loc
 | [bridge.mjs](bridge.mjs) | Stateless local HTTP host and allowlisted public CORS pass-through proxy (default `127.0.0.1:47321`). Serves `web/index.html` and forwards read-only requests to VS Code Marketplace, Open VSX, and public GitHub archives without storing state, files, or extensions, and without spawning OS shells |
 | [web/index.html](web/index.html) | Single-page WebIDE featuring IndexedDB persistence (`webide-browser-v1`), File System Access API integration, pure-JS ZIP unpack/export, minimalist home screen, Explorer, Search, browser-local Source Control, VS Code Marketplace & Extension Host, multi-project taskbar, Monaco Editor & Diff view, and an isolated browser shell |
 | [site/launch.html](site/launch.html) | Standalone launch landing page that opens `http://127.0.0.1:47321/` via **Open WebIDE** |
-| [test/test.mjs](test/test.mjs) | Automated self-check verifying stateless server behavior, zero disk writes, CSP policy, same-origin `/session`, SSRF/traversal rejection on `/proxy/*`, and removal of server-side FS/shell/extension storage endpoints |
+| [Dockerfile](Dockerfile) / [docker-compose.yml](docker-compose.yml) / [Caddyfile](Caddyfile) | Single-host container deployment stack (Node 22 Alpine + Caddy automatic HTTPS reverse proxy, 512MB limit) |
+| [.env.example](.env.example) | Environment variable template for public domains and anti-crawler / rate-limit tuning |
+| [test/test.mjs](test/test.mjs) | Automated self-check verifying stateless server behavior, zero disk writes, CSP policy, public host allowlisting, bot blocking, IP rate limits, and removal of legacy endpoints |
 | [test/mock-acp.mjs](test/mock-acp.mjs) | Retained mock ACP script (server-side agent spawning is disabled in browser-local privacy mode) |
 
 ### Quick Start
@@ -135,10 +154,25 @@ Prerequisites: Node.js (with ES Modules and built-in `fetch`) and a modern deskt
    ```
    Optionally serve the standalone landing page with `python3 -m http.server 8000 -d site` and visit `http://localhost:8000/launch.html`.
 
+#### Public Container Deployment (Docker + Caddy Automatic HTTPS)
+
+```sh
+cp .env.example .env
+# Set WEBIDE_DOMAIN and WEBIDE_PUBLIC_HOSTS in .env to your domain (e.g. ide.example.com)
+docker compose up -d --build
+```
+
+Built-in zero-password abuse protection:
+- **Lightweight Anti-Crawler**: Serves `GET /robots.txt` (`Disallow: /`) and `X-Robots-Tag: noindex, nofollow, noarchive`; blocks known scraper/crawler User-Agents (`GPTBot`, `Scrapy`, `python-requests`, `curl`, etc.) on `/` and `/proxy/*` while keeping `/health` open; binds `/session` tokens to client IP + UA hash (2h sliding TTL) so scraped tokens cannot be replayed across hosts.
+- **Per-IP Rate & Bandwidth Limits**: Returns `429 Too Many Requests` with `Retry-After` (defaults: `WEBIDE_RL_PAGE=120`/min, `WEBIDE_RL_SESSION=20`/min, `WEBIDE_RL_PROXY=60`/min, `WEBIDE_RL_DL=15`/min, and `WEBIDE_RL_DL_MB=500` MB / 10 min per IP).
+
 #### Environment Variables & Browser Storage Layout
-- `WEBIDE_PORT`: Listening port, default `47321`.
-- `WEBIDE_HOST`: Bind address, default `127.0.0.1`.
+- `WEBIDE_PORT` / `PORT`: Listening port, default `47321`.
+- `WEBIDE_HOST`: Bind address, default `127.0.0.1` (set `0.0.0.0` in Docker/VPS).
+- `WEBIDE_PUBLIC_HOSTS`: Comma-separated allowed public domain hostnames (e.g. `ide.example.com`).
+- `WEBIDE_TRUST_PROXY`: Set `1` behind Caddy/Nginx/Cloudflare to trust forwarded client IPs (`X-Real-IP` / `CF-Connecting-IP`).
 - `WEBIDE_ORIGINS`: Comma-separated list of additional allowed CORS origins.
+- `WEBIDE_RL_PAGE` / `WEBIDE_RL_SESSION` / `WEBIDE_RL_PROXY` / `WEBIDE_RL_DL` / `WEBIDE_RL_DL_MB`: Per-IP rate-limit and bandwidth thresholds.
 - **Browser IndexedDB (`webide-browser-v1`)**: Strictly isolated per browser profile and origin across 5 stores: `projects` (project metadata & `FileSystemDirectoryHandle`), `files` (GitHub clones & imported local files), `snapshots` (browser-local baseline snapshots), `extensions` (unpacked VS Code extensions, themes, grammars, snippets, and browser bundles), and `meta` (project taskbar ordering and active selection).
 - **Browser `localStorage`**: Stores layout preferences (`webidePrefs`), active color theme key (`webideTheme`), and extension setting values.
 
