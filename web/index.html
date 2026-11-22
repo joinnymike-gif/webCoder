@@ -179,6 +179,20 @@
   #gitdlg .qp-in { display: grid; gap: 8px; padding: 14px; }
   #gitdlg label { display: grid; gap: 4px; font-size: 12px; color: var(--dim); }
   #gitdlg .gd-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+  #gd-auth { border: 1px solid var(--border); border-radius: 8px; background: #ffffff04; }
+  #gd-auth summary { display: flex; align-items: center; gap: 6px; padding: 7px 10px; cursor: pointer; font-size: 12px; color: var(--fg); list-style: none; user-select: none; }
+  #gd-auth summary::-webkit-details-marker { display: none; }
+  #gd-auth summary .codicon { font-size: 14px; color: var(--dim); }
+  #gd-auth[open] summary { border-bottom: 1px solid var(--border); }
+  .gd-tok-st { margin-left: auto; font-size: 11px; color: var(--dim); }
+  .gd-tok-st.on { color: var(--ok); }
+  .gd-auth-in { display: grid; gap: 8px; padding: 10px; }
+  #gitdlg .gd-auth-in a { color: var(--link); }
+  #gitdlg .gd-chk { display: flex; align-items: center; gap: 6px; color: var(--fg); }
+  #gitdlg .gd-chk input { width: auto; height: auto; margin: 0; accent-color: var(--accent); }
+  .gd-note { display: flex; gap: 6px; align-items: flex-start; margin: 0; font-size: 11.5px; color: var(--dim); line-height: 1.45; }
+  .gd-note .codicon { color: var(--ok); font-size: 14px; flex: none; margin-top: 1px; }
+  #gd-forget { justify-self: start; height: 24px; }
 
   /* extensions (VS Code Marketplace) */
   .ext-box { padding: 4px 10px 8px; flex: none; display: grid; gap: 6px; }
@@ -673,6 +687,17 @@
     <label id="gd-dir-wrap"><span>Branch (optional — saved locally in browser IndexedDB)</span>
       <input id="gd-dir" placeholder="e.g. main (leave blank for default HEAD)" spellcheck="false" autocomplete="off">
     </label>
+    <details id="gd-auth">
+      <summary><span class="codicon codicon-lock"></span><span>Private repository access</span><span id="gd-tok-st" class="gd-tok-st"></span></summary>
+      <div class="gd-auth-in">
+        <label><span>GitHub access token — read-only is enough. <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Create a fine-grained token</a> with <b>Contents: Read</b> + <b>Metadata: Read</b> for the repos you want.</span>
+          <input id="gd-tok" type="password" placeholder="github_pat_… / ghp_…" spellcheck="false" autocomplete="off" autocapitalize="off">
+        </label>
+        <label class="gd-chk"><input type="checkbox" id="gd-remember" checked><span>Remember on this device</span></label>
+        <p class="gd-note"><span class="codicon codicon-shield"></span><span>The token stays in this browser and is sent only to api.github.com. The WebIDE server never receives it.</span></p>
+        <button type="button" class="btn sec" id="gd-forget" hidden>Forget saved token</button>
+      </div>
+    </details>
     <div id="gd-err" class="qp-msg err" hidden></div>
     <div class="gd-foot"><button type="button" class="btn sec" id="gd-cancel">Cancel</button><button type="submit" class="btn" id="gd-ok">Clone</button></div>
   </form>
@@ -2913,6 +2938,8 @@ const COMMANDS = () => [
   ]),
   { label: 'Git: Clone from GitHub…', run: () => openGitDialog('clone') },
   { label: 'Git: Connect GitHub Remote…', run: () => openGitDialog('remote') },
+  { label: 'GitHub: Set Access Token (Private Repositories)…', run: () => { openGitDialog('clone'); $('#gd-auth').open = true; } },
+  ...(ghToken ? [{ label: 'GitHub: Forget Access Token', run: () => { setGhToken(''); toast('GitHub token removed from this browser.'); } }] : []),
   { label: 'Git: Checkout / Create Branch…', run: gitBranchPicker },
   { label: 'Git: Pull Updates from GitHub', run: () => gitPullFromGithub().catch(fail) },
   { label: 'Workspace: Export Project as ZIP…', run: () => exportProjectZip().catch(fail) },
@@ -3344,31 +3371,134 @@ async function exportProjectZip() {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
   toast(`Exported ${entries.length} files to ${proj.name}.zip.`);
 }
-async function cloneGithubIntoBrowser(slug, branch = '') {
-  const metaP = getJSON('/proxy/github/meta?repo=' + enc(slug)).catch(() => ({ slug, defaultBranch: branch || 'main', htmlUrl: `https://github.com/${slug}` }));
-  const zipResP = api(`/proxy/github/archive?repo=${enc(slug)}&branch=${enc(branch)}`);
-  const [meta, r] = await Promise.all([metaP, zipResP]);
+// ---------- GitHub access token: private repositories ----------
+// Private repos are read straight from the GitHub API by this browser with the user's own token. The token is kept
+// only in this browser (localStorage when "remember" is ticked, else sessionStorage) and is sent only to
+// api.github.com, never to the WebIDE server, so the server stays stateless and never sees credentials.
+const GH_API = 'https://api.github.com';
+let ghToken = '';
+try { ghToken = localStorage.webideGhToken || sessionStorage.webideGhToken || ''; } catch { /* storage unavailable */ }
+function setGhToken(tok, remember = true) {
+  ghToken = String(tok || '').trim();
+  try {
+    localStorage.removeItem('webideGhToken'); sessionStorage.removeItem('webideGhToken');
+    if (ghToken) (remember ? localStorage : sessionStorage).webideGhToken = ghToken;
+  } catch { /* storage unavailable: token lives in memory for this page only */ }
+}
+const ghTokenHint = () => ghToken ? '••••' + ghToken.slice(-4) : '';
+async function ghFetch(path, { accept = 'application/vnd.github+json', method = 'GET', body } = {}) {
+  let r;
+  try {
+    r = await fetch(GH_API + path, { method, body, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer',
+      headers: { accept, authorization: 'Bearer ' + ghToken, ...(body && { 'content-type': 'application/json' }) } });
+  } catch { throw new Error('Could not reach api.github.com from this browser (offline, or blocked by a network filter).'); }
+  if (r.ok) return r;
+  let msg = '';
+  try { msg = (await r.json()).message || ''; } catch { /* non-JSON error body */ }
+  const rate = r.headers.get('x-ratelimit-remaining') === '0';
+  throw Object.assign(new Error(
+    r.status === 401 ? 'GitHub rejected the access token (401: invalid or expired). Enter a new token in the GitHub dialog.'
+    : r.status === 404 ? 'Repository or branch not found on GitHub (404). Check the name, and that the token has read access to this repository (fine-grained token: Contents + Metadata, read-only).'
+    : rate ? 'GitHub API rate limit reached for this token. Try again later.'
+    : r.status === 403 ? `GitHub refused the request (403): ${msg || 'missing permission'}${/SAML|SSO/i.test(msg) ? ' — authorize the token for your organization (SAML SSO) on GitHub.' : ''}`
+    : `GitHub API error ${r.status}${msg ? ': ' + msg : ''}`), { status: r.status });
+}
+// Runs fn over items with at most n in flight.
+async function runPool(items, n, fn) {
+  let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) await fn(items[i++]); }));
+}
+// Branch snapshot via the API: 3 small calls (repo, branch, recursive tree), then file contents in GraphQL batches
+// (~1 request per 80 files instead of one per file). Binary or oversized blobs, or tokens without GraphQL access,
+// fall back to the REST raw-blob endpoint.
+async function ghApiSnapshot(slug, branch, progress = () => {}) {
+  const [owner, name] = slug.split('/');
+  const repoPath = `/repos/${enc(owner)}/${enc(name)}`;
+  const repo = await (await ghFetch(repoPath)).json();
+  const ref = branch || repo.default_branch || 'main';
+  const br = await (await ghFetch(`${repoPath}/branches/${ref.split('/').map(enc).join('/')}`)).json();
+  const tree = await (await ghFetch(`${repoPath}/git/trees/${br.commit.commit.tree.sha}?recursive=1`)).json();
+  const MAX_FILE = 5 * 1024 * 1024, MAX_TOTAL = 80 * 1024 * 1024, MAX_FILES = 20000;
+  const files = [];
+  let total = 0, skipped = 0;
+  for (const t of tree.tree || []) {
+    if (t.type !== 'blob' || t.path.split('/').some(seg => HIDDEN.has(seg))) continue;
+    if (t.size > MAX_FILE || total + t.size > MAX_TOTAL || files.length >= MAX_FILES) { skipped++; continue; }
+    total += t.size; files.push(t);
+  }
+  const uniq = [...new Map(files.map(f => [f.sha, f])).values()], content = new Map(), rest = [];
+  const batches = [];
+  for (let cur = [], bytes = 0, k = 0; k <= uniq.length; k++) {
+    const f = uniq[k];
+    if (cur.length && (!f || cur.length >= 80 || bytes + f.size > 3e6)) { batches.push(cur); cur = []; bytes = 0; }
+    if (f) { cur.push(f); bytes += f.size; }
+  }
+  let useGql = true, done = 0;
+  const tick = n => { done += n; progress(done, uniq.length); };
+  await runPool(batches, 3, async batch => {
+    if (useGql) {
+      try {
+        const query = `query($o:String!,$n:String!){repository(owner:$o,name:$n){${batch.map((f, i) => `b${i}:object(oid:"${f.sha}"){...on Blob{text isBinary}}`).join(' ')}}}`;
+        const d = await (await ghFetch('/graphql', { method: 'POST', body: JSON.stringify({ query, variables: { o: owner, n: name } }) })).json();
+        const data = d.data?.repository;
+        if (!data) throw new Error(d.errors?.[0]?.message || 'GraphQL returned no data');
+        batch.forEach((f, i) => { const b = data['b' + i]; if (b && !b.isBinary && typeof b.text === 'string') content.set(f.sha, textEnc.encode(b.text)); else rest.push(f); });
+        return tick(batch.filter(f => content.has(f.sha)).length);
+      } catch (e) {
+        if (e.status === 401) throw e;
+        useGql = false; // e.g. a token GraphQL won't accept: REST still works
+      }
+    }
+    rest.push(...batch.filter(f => !content.has(f.sha)));
+  });
+  await runPool(rest, 8, async f => {
+    const r = await ghFetch(`${repoPath}/git/blobs/${f.sha}`, { accept: 'application/vnd.github.raw+json' });
+    content.set(f.sha, new Uint8Array(await r.arrayBuffer()));
+    tick(1);
+  });
+  return {
+    meta: { slug: repo.full_name || slug, defaultBranch: repo.default_branch || 'main', htmlUrl: repo.html_url || `https://github.com/${slug}`, private: !!repo.private },
+    branch: ref, entries: files.map(f => [f.path, content.get(f.sha)]), skipped: skipped + (tree.truncated ? 1 : 0), truncated: !!tree.truncated,
+  };
+}
+// Public repos without a token keep using the server's stateless ZIP pass-through; with a token everything goes
+// browser → api.github.com directly.
+async function fetchGithubSnapshot(slug, branch = '', progress) {
+  if (ghToken) return ghApiSnapshot(slug, branch, progress);
+  const metaP = getJSON('/proxy/github/meta?repo=' + enc(slug)).catch(e => { if (e.status === 404) throw e; return { slug, defaultBranch: branch || 'main', htmlUrl: `https://github.com/${slug}` }; });
+  const zipP = api(`/proxy/github/archive?repo=${enc(slug)}&branch=${enc(branch)}`);
+  let meta, r;
+  try { [meta, r] = await Promise.all([metaP, zipP]); } catch (e) {
+    if (e.status === 404 || /Upstream returned 404/.test(e.message)) throw Object.assign(new Error(`${slug}${branch ? ' @ ' + branch : ''} was not found as a public repository. If it is private, add a GitHub access token in this dialog.`), { status: 404, needsToken: true });
+    throw e;
+  }
   const zipEntries = await unzipBytes(await r.arrayBuffer(), {
     filter: name => {
       const slash = name.indexOf('/'), rel = slash >= 0 ? name.slice(slash + 1) : name;
       return !!rel && !rel.split('/').some(s => HIDDEN.has(s));
     },
   });
+  const entries = [];
+  for (const [rawPath, bytes] of zipEntries) {
+    const slash = rawPath.indexOf('/'), rel = slash >= 0 ? rawPath.slice(slash + 1) : rawPath;
+    if (rel) entries.push([rel, bytes]);
+  }
+  return { meta, branch: branch || meta.defaultBranch || 'main', entries, skipped: 0 };
+}
+async function cloneGithubIntoBrowser(slug, branch = '', progress) {
+  const { meta, branch: ref, entries, skipped } = await fetchGithubSnapshot(slug, branch, progress);
   const id = 'gh:' + slug + ':' + safeUid(6);
   const repoName = slug.split('/').pop();
   const fileRecs = [], snapRecs = [], fileMeta = {}, snapMeta = {}, now = Date.now();
-  for (const [rawPath, bytes] of zipEntries) {
-    const slash = rawPath.indexOf('/');
-    const rel = slash >= 0 ? rawPath.slice(slash + 1) : rawPath;
-    if (!rel) continue;
+  for (const [rel, bytes] of entries) {
     const etag = bytesEtag(bytes);
     fileMeta[rel] = etag; snapMeta[rel] = etag;
     fileRecs.push({ key: fKey(id, rel), projectId: id, path: rel, content: bytes, etag, mtime: now });
     snapRecs.push({ key: fKey(id, rel), projectId: id, path: rel, content: bytes, etag });
   }
   const proj = emptyProj(id, {
-    name: repoName, kind: 'gh', isRepo: true, branch: branch || meta.defaultBranch || 'main',
-    remote: { slug, url: `https://github.com/${slug}.git`, githubUrl: meta.htmlUrl || `https://github.com/${slug}` },
+    name: repoName, kind: 'gh', isRepo: true, branch: ref,
+    remote: { slug, url: `https://github.com/${slug}.git`, githubUrl: meta.htmlUrl || `https://github.com/${slug}`, private: !!meta.private },
     fileMeta, snapMeta,
   });
   await Promise.all([dbPutMany('files', fileRecs), dbPutMany('snapshots', snapRecs), dbPut('projects', serializeProjMeta(proj))]);
@@ -3377,24 +3507,16 @@ async function cloneGithubIntoBrowser(slug, branch = '') {
   root = id;
   await restoreProject(root);
   showView('explorer');
-  toast(`Cloned ${slug} (${fileRecs.length} files) strictly into browser IndexedDB.`);
+  toast(`Cloned ${meta.private ? 'private repo ' : ''}${slug} (${fileRecs.length} files) strictly into browser IndexedDB.${skipped ? ` ${skipped} oversized file(s) skipped.` : ''}`);
 }
 async function gitPullFromGithub() {
   const proj = activeProj();
   if (!proj?.remote?.slug) return toast('Connect a GitHub remote first.', 'warn');
   const slug = proj.remote.slug;
-  const r = await api(`/proxy/github/archive?repo=${enc(slug)}&branch=${enc(proj.branch || '')}`);
-  const zipEntries = await unzipBytes(await r.arrayBuffer(), {
-    filter: name => {
-      const slash = name.indexOf('/'), rel = slash >= 0 ? name.slice(slash + 1) : name;
-      return !!rel && !rel.split('/').some(s => HIDDEN.has(s));
-    },
-  });
+  if (proj.remote.private && !ghToken) { openGitDialog('remote'); throw new Error(`${slug} is private: add a GitHub access token to pull.`); }
+  const { entries } = await fetchGithubSnapshot(slug, proj.branch || '');
   const fileRecs = [], snapRecs = [], fileMeta = {}, snapMeta = {}, now = Date.now();
-  for (const [rawPath, bytes] of zipEntries) {
-    const slash = rawPath.indexOf('/');
-    const rel = slash >= 0 ? rawPath.slice(slash + 1) : rawPath;
-    if (!rel) continue;
+  for (const [rel, bytes] of entries) {
     const etag = bytesEtag(bytes);
     snapMeta[rel] = etag;
     if (proj.kind === 'fsa') {
@@ -3432,9 +3554,19 @@ function openGitDialog(mode = 'clone') {
   $('#gd-dir-wrap').hidden = mode !== 'clone';
   $('#gd-url').value = mode === 'remote' ? (gitState?.remote?.url || '') : '';
   if (mode === 'clone') $('#gd-dir').value = '';
+  syncGhTokenUi();
+  $('#gd-auth').open = mode === 'remote' && !!gitState?.remote?.private && !ghToken;
   d.showModal();
   $('#gd-url').focus();
 }
+function syncGhTokenUi() {
+  $('#gd-tok').value = '';
+  $('#gd-tok').placeholder = ghToken ? `Saved token ${ghTokenHint()} in use — paste a new one to replace` : 'github_pat_… / ghp_…';
+  $('#gd-tok-st').textContent = ghToken ? `Token ${ghTokenHint()}` : 'Public repos need no token';
+  $('#gd-tok-st').classList.toggle('on', !!ghToken);
+  $('#gd-forget').hidden = !ghToken;
+}
+$('#gd-forget').onclick = () => { setGhToken(''); syncGhTokenUi(); toast('GitHub token removed from this browser.'); };
 $('#gd-cancel').onclick = () => $('#gitdlg').close();
 lightDismiss($('#gitdlg'), () => $('#gitdlg').close());
 $('#gd-form').onsubmit = async e => {
@@ -3442,11 +3574,16 @@ $('#gd-form').onsubmit = async e => {
   const rawUrl = $('#gd-url').value.trim(), branch = $('#gd-dir').value.trim();
   if (!rawUrl) return;
   $('#gd-err').hidden = true; $('#gd-ok').disabled = true;
-  $('#gd-ok').textContent = gdMode === 'clone' ? 'Downloading ZIP…' : 'Saving…';
+  $('#gd-ok').textContent = gdMode === 'clone' ? (ghToken || $('#gd-tok').value.trim() ? 'Connecting to GitHub…' : 'Downloading ZIP…') : 'Saving…';
   try {
-    const slug = parseGithubInput(rawUrl);
+    const slug = parseGithubInput(rawUrl), newTok = $('#gd-tok').value.trim();
+    if (newTok) {
+      if (!/^[A-Za-z0-9_]{20,255}$/.test(newTok)) throw new Error('That does not look like a GitHub token (expected github_pat_… or ghp_…).');
+      setGhToken(newTok, $('#gd-remember').checked);
+      syncGhTokenUi();
+    }
     if (gdMode === 'clone') {
-      await cloneGithubIntoBrowser(slug, branch);
+      await cloneGithubIntoBrowser(slug, branch, (n, total) => { $('#gd-ok').textContent = `Downloading ${n}/${total}…`; });
       $('#gitdlg').close();
     } else {
       const proj = activeProj();
@@ -3459,6 +3596,7 @@ $('#gd-form').onsubmit = async e => {
     }
   } catch (err) {
     $('#gd-err').textContent = err.message; $('#gd-err').hidden = false;
+    if (err.needsToken || err.status === 401) { $('#gd-auth').open = true; $('#gd-tok').focus(); }
   } finally {
     $('#gd-ok').disabled = false;
     $('#gd-ok').textContent = gdMode === 'clone' ? 'Clone' : 'Save Remote';

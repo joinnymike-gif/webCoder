@@ -302,7 +302,7 @@ async function searchMarketplace(query = '') {
 
 async function fetchBoundedBytes(url, maxBytes, headers = {}) {
   const r = await fetch(url, { headers, redirect: 'follow', signal: AbortSignal.timeout(60000) });
-  if (!r.ok) throw new HttpErr(502, `Upstream returned ${r.status}`);
+  if (!r.ok) throw new HttpErr(r.status === 404 ? 404 : 502, `Upstream returned ${r.status}`); // 404: e.g. a private or missing GitHub repo
   const cl = Number(r.headers.get('content-length') || 0);
   if (cl > maxBytes) throw new HttpErr(413, `Payload exceeds ${Math.round(maxBytes / 1048576)} MB limit`);
   const buf = Buffer.from(await r.arrayBuffer());
