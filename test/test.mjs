@@ -123,6 +123,9 @@ try {
   assert.equal((await f('/proxy/ext/vsix?url=' + encodeURIComponent('http://open-vsx.org/x.vsix'), { headers: H })).status, 400, 'rejects non-HTTPS vsix');
   assert.equal((await f('/proxy/github/meta?repo=' + encodeURIComponent('../../etc/passwd'), { headers: H })).status, 400, 'rejects invalid repo slug');
   assert.equal((await f('/proxy/github/archive?repo=octocat/Hello-World&branch=..', { headers: H })).status, 400, 'rejects traversal branch');
+  assert.equal((await f('/proxy/ext/vsix?url=' + encodeURIComponent('https://user:pw@open-vsx.org/x.vsix'), { headers: H })).status, 400, 'rejects credentials in vsix URL');
+  const errRes = await f('/proxy/github/meta?repo=a/b', { headers: H }); // no network in CI => 500 must stay generic
+  if (errRes.status === 500) assert.equal(await errRes.text(), 'internal error', 'hides internal error details');
 
   // Verify public host allowlist, reverse-proxy client IP resolution, & 429 rate limiting
   const PROD_PORT = 47400;
@@ -153,6 +156,8 @@ try {
   assert.equal(rlHit.status, 429, 'enforces per-IP rate limit');
   assert.ok(Number(rlHit.headers['retry-after']) >= 1, 'includes Retry-After header on 429');
   assert.equal(otherIp.status, 200, 'isolates rate limit bucket by client IP');
+  const cfSpoof = await rawHttp(PROD_PORT, '/', 'GET', { host: 'ide.example.com', 'user-agent': BROWSER_UA, 'x-real-ip': '203.0.113.10', 'cf-connecting-ip': '198.51.100.99' });
+  assert.equal(cfSpoof.status, 429, 'spoofed CF-Connecting-IP does not reset the rate limit');
 
   // Behind a TLS proxy the origin is https; WEBIDE_NOINDEX restores Disallow-all + noindex
   const prodEn = await rawHttp(PROD_PORT, '/en', 'GET', { host: 'ide.example.com', 'user-agent': BROWSER_UA, 'x-real-ip': '203.0.113.12', 'x-forwarded-proto': 'https' });

@@ -87,8 +87,9 @@ function normIp(raw) {
 
 function getClientIp(req) {
   if (TRUST_PROXY) {
-    const cf = req.headers['cf-connecting-ip'];
-    if (cf) return normIp(cf);
+    // Only headers our own proxy overwrites. Never CF-Connecting-IP: Caddy passes it through
+    // untouched, so any client could spoof it to dodge rate limits and token IP binding.
+    // Behind Cloudflare, have the proxy set X-Real-IP from CF-Connecting-IP instead.
     const xr = req.headers['x-real-ip'];
     if (xr) return normIp(xr);
     const xff = String(req.headers['x-forwarded-for'] || '');
@@ -175,6 +176,7 @@ function validToken(tok, ip, ua) {
 
 function isAllowedHost(hostName) {
   const h = String(hostName || '').toLowerCase();
+  if (!/^[a-z0-9.-]+$/.test(h)) return false; // Host is echoed into HTML/XML; `*` must not let markup through
   if (h === '127.0.0.1' || h === 'localhost') return true;
   if (PUBLIC_HOSTS.has('*')) return true;
   return PUBLIC_HOSTS.has(h);
@@ -205,13 +207,14 @@ function allowedOrigins(reqHost) {
   return set;
 }
 
-function allowedVsixUrl(raw) {
-  let u;
-  try { u = new URL(raw); } catch { return false; }
-  if (u.protocol !== 'https:') return false;
-  const h = u.hostname.toLowerCase();
-  return h.endsWith('.vsassets.io') || h.endsWith('.visualstudio.com') || h === 'open-vsx.org' || h === 'github.com' || h.endsWith('.githubusercontent.com');
+function httpsHost(raw) {
+  try { const u = new URL(raw); return u.protocol === 'https:' && !u.username && !u.password ? u.hostname.toLowerCase() : ''; } catch { return ''; }
 }
+function allowedVsixUrl(raw) {
+  const h = httpsHost(raw);
+  return !!h && (h.endsWith('.vsassets.io') || h.endsWith('.visualstudio.com') || h === 'open-vsx.org' || h === 'github.com' || h.endsWith('.githubusercontent.com'));
+}
+const allowedArchiveUrl = raw => httpsHost(raw) === 'codeload.github.com';
 
 function parseRepoParam(raw) {
   const s = String(raw || '').trim();
@@ -300,14 +303,39 @@ async function searchMarketplace(query = '') {
   }));
 }
 
-async function fetchBoundedBytes(url, maxBytes, headers = {}) {
-  const r = await fetch(url, { headers, redirect: 'follow', signal: AbortSignal.timeout(60000) });
-  if (!r.ok) throw new HttpErr(r.status === 404 ? 404 : 502, `Upstream returned ${r.status}`); // 404: e.g. a private or missing GitHub repo
-  const cl = Number(r.headers.get('content-length') || 0);
-  if (cl > maxBytes) throw new HttpErr(413, `Payload exceeds ${Math.round(maxBytes / 1048576)} MB limit`);
-  const buf = Buffer.from(await r.arrayBuffer());
-  if (buf.length > maxBytes) throw new HttpErr(413, `Payload exceeds ${Math.round(maxBytes / 1048576)} MB limit`);
-  return { buf, type: r.headers.get('content-type') || 'application/octet-stream' };
+// ponytail: global cap so a handful of IPs can't OOM the 512 MB container with 80 MB buffers; raise with mem_limit
+const MAX_DL_INFLIGHT = 4;
+let dlInflight = 0;
+// Every redirect hop is re-checked against `allow` (redirect: 'follow' would let an allowlisted
+// host bounce the server to internal addresses), and the body is capped while streaming.
+async function fetchBoundedBytes(url, maxBytes, allow, headers = {}) {
+  if (dlInflight >= MAX_DL_INFLIGHT) throw new HttpErr(503, 'Server busy, retry in a few seconds');
+  dlInflight++;
+  try {
+    const signal = AbortSignal.timeout(60000);
+    let r;
+    for (let hop = 0; ; hop++) {
+      if (!allow(url)) throw new HttpErr(400, 'Disallowed download URL');
+      r = await fetch(url, { headers, redirect: 'manual', signal });
+      const loc = r.status >= 300 && r.status < 400 && r.headers.get('location');
+      if (!loc) break;
+      await r.body?.cancel();
+      if (hop >= 5) throw new HttpErr(502, 'Too many upstream redirects');
+      url = new URL(loc, url).href;
+    }
+    if (!r.ok) throw new HttpErr(r.status === 404 ? 404 : 502, `Upstream returned ${r.status}`); // 404: e.g. a private or missing GitHub repo
+    const tooBig = () => new HttpErr(413, `Payload exceeds ${Math.round(maxBytes / 1048576)} MB limit`);
+    if (Number(r.headers.get('content-length') || 0) > maxBytes) { await r.body?.cancel(); throw tooBig(); }
+    const chunks = [];
+    let n = 0;
+    for await (const c of r.body || []) {
+      if ((n += c.length) > maxBytes) throw tooBig(); // leaving the loop cancels the stream
+      chunks.push(c);
+    }
+    return { buf: Buffer.concat(chunks, n), type: r.headers.get('content-type') || 'application/octet-stream' };
+  } finally {
+    dlInflight--;
+  }
 }
 
 function reply(res, code, body, type = 'text/plain; charset=utf-8', extraHeaders = {}) {
@@ -427,7 +455,7 @@ const server = http.createServer(async (req, res) => {
       if (!enforceRate(res, `dl:${ip}`, RL.dlMax, 60_000)) return;
       const vsixUrl = String(u.searchParams.get('url') || '');
       if (!allowedVsixUrl(vsixUrl)) throw new HttpErr(400, 'Disallowed VSIX download URL');
-      const { buf } = await fetchBoundedBytes(vsixUrl, 60 * 1024 * 1024, { 'user-agent': 'WebIDE-Stateless-Proxy/1.0' });
+      const { buf } = await fetchBoundedBytes(vsixUrl, 60 * 1024 * 1024, allowedVsixUrl, { 'user-agent': 'WebIDE-Stateless-Proxy/1.0' });
       if (!enforceRate(res, `dlb:${ip}`, RL.dlBytesMax, 10 * 60_000, buf.length)) return;
       return reply(res, 200, buf, 'application/octet-stream');
     }
@@ -458,7 +486,7 @@ const server = http.createServer(async (req, res) => {
       const repo = parseRepoParam(u.searchParams.get('repo'));
       const branch = parseBranchParam(u.searchParams.get('branch'));
       const ref = branch ? `refs/heads/${branch.split('/').map(encodeURIComponent).join('/')}` : 'HEAD';
-      const { buf } = await fetchBoundedBytes(`https://codeload.github.com/${repo}/zip/${ref}`, 80 * 1024 * 1024, {
+      const { buf } = await fetchBoundedBytes(`https://codeload.github.com/${repo}/zip/${ref}`, 80 * 1024 * 1024, allowedArchiveUrl, {
         'user-agent': 'WebIDE-Stateless-Proxy/1.0',
       });
       if (!enforceRate(res, `dlb:${ip}`, RL.dlBytesMax, 10 * 60_000, buf.length)) return;
@@ -467,8 +495,9 @@ const server = http.createServer(async (req, res) => {
 
     return reply(res, 404, 'not found');
   } catch (e) {
-    const code = e instanceof HttpErr ? e.code : 500;
-    return reply(res, code, e?.message || 'internal error');
+    if (e instanceof HttpErr) return reply(res, e.code, e.message);
+    console.error(e); // keep internals (upstream hosts, stack details) out of client responses
+    return reply(res, 500, 'internal error');
   }
 });
 

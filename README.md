@@ -54,7 +54,7 @@ docker compose up -d --build
 - `WEBIDE_PORT` / `PORT`：HTTP 服务监听端口，默认 `47321`。
 - `WEBIDE_HOST`：服务绑定地址，默认 `127.0.0.1`（容器部署设为 `0.0.0.0`）。
 - `WEBIDE_PUBLIC_HOSTS`：允许公网访问的域名白名单（逗号分隔，如 `ide.example.com,www.ide.example.com`）。
-- `WEBIDE_TRUST_PROXY`：置于 Caddy/Nginx/Cloudflare 后方时设为 `1`，用于安全解析真实客户端 IP（`X-Real-IP` / `CF-Connecting-IP`）。
+- `WEBIDE_TRUST_PROXY`：置于 Caddy/Nginx 后方时设为 `1`，从反向代理覆盖写入的 `X-Real-IP`（或 `X-Forwarded-For` 最后一跳）解析真实客户端 IP。不信任 `CF-Connecting-IP`（客户端可伪造）；前面再套 Cloudflare 时，请让反向代理只接受 Cloudflare IP 并用 `CF-Connecting-IP` 设置 `X-Real-IP`。
 - `WEBIDE_ORIGINS`：允许访问的额外来源列表（逗号分隔）。
 - `WEBIDE_RL_PAGE` / `WEBIDE_RL_SESSION` / `WEBIDE_RL_PROXY` / `WEBIDE_RL_DL` / `WEBIDE_RL_DL_MB` / `WEBIDE_ALLOW_BOTS`：按单 IP 调节限流阈值及爬虫放行开关（测试用）。
 - **浏览器端 IndexedDB（`webide-browser-v1`）**：按浏览器 Profile 与 Origin 严格隔离，包含 `projects`（工程元数据与本地 `FileSystemDirectoryHandle`）、`files`（GitHub 克隆及浏览器导入文件内容）、`snapshots`（浏览器侧基线快照）、`extensions`（已下载并解包的 VS Code 插件与主题/语法/片段/Web Bundle）和 `meta`（多工程顺序与活跃状态）。
@@ -177,7 +177,7 @@ Built-in zero-password abuse protection:
 - `WEBIDE_PORT` / `PORT`: Listening port, default `47321`.
 - `WEBIDE_HOST`: Bind address, default `127.0.0.1` (set `0.0.0.0` in Docker/VPS).
 - `WEBIDE_PUBLIC_HOSTS`: Comma-separated allowed public domain hostnames (e.g. `ide.example.com`).
-- `WEBIDE_TRUST_PROXY`: Set `1` behind Caddy/Nginx/Cloudflare to trust forwarded client IPs (`X-Real-IP` / `CF-Connecting-IP`).
+- `WEBIDE_TRUST_PROXY`: Set `1` behind Caddy/Nginx to read the client IP from `X-Real-IP` (or the last `X-Forwarded-For` hop) written by your reverse proxy. `CF-Connecting-IP` is never trusted (clients can spoof it); behind Cloudflare, have the proxy accept only Cloudflare IPs and set `X-Real-IP` from `CF-Connecting-IP`.
 - `WEBIDE_ORIGINS`: Comma-separated list of additional allowed CORS origins.
 - `WEBIDE_RL_PAGE` / `WEBIDE_RL_SESSION` / `WEBIDE_RL_PROXY` / `WEBIDE_RL_DL` / `WEBIDE_RL_DL_MB` / `WEBIDE_ALLOW_BOTS`: Per-IP rate-limit/bandwidth thresholds and optional bot bypass flag.
 - `WEBIDE_NOINDEX`: Set `1` to keep the deployment out of search engines (staging / private hosts).
