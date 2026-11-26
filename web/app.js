@@ -88,6 +88,7 @@ const ZH = {
   'Markdown: Open Preview to the Side': 'Markdown：在侧边打开预览', 'Open Local History…': '打开本地历史记录…', 'Open on GitHub': '在 GitHub 上打开',
   'Preferences: Color Theme': '首选项：颜色主题', 'Reveal in Explorer View': '在资源管理器中显示', 'Search: Find in Files': '搜索：在文件中查找',
   'Stage All Changes': '暂存所有更改', 'Unstage All Changes': '取消暂存所有更改', 'Terminal: Clear': '终端：清除', 'Terminal: Create New Terminal': '终端：新建终端',
+  'Terminal: New Companion Terminal': '终端：新建 Companion 终端', 'Companion: Connect…': 'Companion：连接…', 'Companion: Disconnect': 'Companion：断开连接',
   'Terminal: Kill the Active Terminal Instance': '终端：终止当前终端实例', 'View: Close All Editors': '视图：关闭所有编辑器', 'View: Close Editor': '视图：关闭编辑器',
   'View: Show Explorer': '视图：显示资源管理器', 'View: Show Extensions': '视图：显示扩展', 'View: Show Home': '视图：显示首页', 'View: Show Source Control': '视图：显示源代码管理',
   'View: Toggle Chat': '视图：切换聊天', 'View: Toggle Primary Side Bar Visibility': '视图：切换主侧栏可见性', 'View: Toggle Problems': '视图：切换问题面板',
@@ -460,7 +461,7 @@ $('#home-keys').append(...[['Open Local Repository', K.open], ['Quick Open File'
 $$('kbd.mod').forEach(k => k.textContent = MOD);
 
 // ---------- browser-local IndexedDB + ZIP + Virtual File System (zero server storage) ----------
-const IDB_NAME = 'webide-browser-v1', IDB_VER = 1;
+const IDB_NAME = 'webide-browser-v1', IDB_VER = 2;
 let dbPromise = null;
 function openDB() {
   if (dbPromise) return dbPromise;
@@ -479,6 +480,7 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains('extensions')) db.createObjectStore('extensions', { keyPath: 'dir' });
       if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' });
+      if (!db.objectStoreNames.contains('blobs')) db.createObjectStore('blobs', { keyPath: 'hash' });
     };
     req.onsuccess = () => res(req.result);
     req.onerror = () => rej(req.error || new Error('IndexedDB unavailable'));
@@ -505,6 +507,84 @@ const dbDelByProj = (store, projId) => idbTx(store, 'readwrite', st => {
   const req = st.index('byProj').openCursor(projId);
   req.onsuccess = () => { const c = req.result; if (c) { c.delete(); c.continue(); } };
 });
+
+// ---------- content-addressed blob store (step 4: incremental, deduplicated snapshots) ----------
+// File contents are stored once per unique SHA-256 hash; snapshot records keep only a
+// manifest entry { hash, size, etag } per path. Committing a snapshot therefore writes
+// only the blobs that actually changed (incremental), and identical contents share one
+// blob across paths and projects (deduplication). Blob bytes live in OPFS when the
+// browser offers it (navigator.storage.getDirectory), otherwise in the IndexedDB
+// 'blobs' store; an IDB index record always exists ({ hash, opfs: 1 } or { hash, content }).
+async function sha256Hex(u8) {
+  const buf = await crypto.subtle.digest('SHA-256', u8);
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+let opfsBlobsDirP = null;
+function opfsBlobsDir() {
+  if (!opfsBlobsDirP) {
+    opfsBlobsDirP = (async () => {
+      if (!navigator.storage?.getDirectory) return null;
+      const rootDir = await navigator.storage.getDirectory();
+      return rootDir.getDirectoryHandle('webide-blobs', { create: true });
+    })().catch(() => null);
+  }
+  return opfsBlobsDirP;
+}
+async function blobPut(u8) {
+  const hash = await sha256Hex(u8);
+  if (await dbGet('blobs', hash)) return hash; // already stored: incremental no-op
+  const dir = await opfsBlobsDir();
+  if (dir) {
+    try {
+      const fh = await dir.getFileHandle(hash, { create: true });
+      const w = await fh.createWritable();
+      await w.write(u8); await w.close();
+      await dbPut('blobs', { hash, opfs: 1, size: u8.length });
+      return hash;
+    } catch { /* OPFS write failed: fall through to IndexedDB */ }
+  }
+  await dbPut('blobs', { hash, content: u8, size: u8.length });
+  return hash;
+}
+async function blobGet(hash) {
+  if (!hash) return null;
+  const rec = await dbGet('blobs', hash);
+  if (rec?.content) return rec.content instanceof Uint8Array ? rec.content : new Uint8Array(rec.content);
+  const dir = await opfsBlobsDir();
+  if (dir) {
+    try {
+      const fh = await dir.getFileHandle(hash);
+      return new Uint8Array(await (await fh.getFile()).arrayBuffer());
+    } catch { return null; }
+  }
+  return null;
+}
+async function blobDel(hash) {
+  await dbDel('blobs', hash);
+  const dir = await opfsBlobsDir();
+  if (dir) { try { await dir.removeEntry(hash); } catch {} }
+}
+// New snapshot records are manifest entries (no inline content). Legacy records that
+// still carry `content` inline keep working through snapshotBytes().
+async function snapshotPut(projId, rel, bytes) {
+  const hash = await blobPut(bytes);
+  const rec = { key: fKey(projId, rel), projectId: projId, path: rel, hash, size: bytes.length, etag: bytesEtag(bytes) };
+  await dbPut('snapshots', rec);
+  return rec;
+}
+async function snapshotBytes(rec) {
+  if (!rec) return null;
+  if (rec.content) return rec.content instanceof Uint8Array ? rec.content : textEnc.encode(String(rec.content));
+  return blobGet(rec.hash);
+}
+// Drop blobs no snapshot references anymore (after project delete / snapshot reset).
+async function gcBlobs() {
+  try {
+    const snaps = await dbAll('snapshots');
+    const used = new Set(snaps.map(s => s.hash).filter(Boolean));
+    for (const b of await dbAll('blobs')) if (!used.has(b.hash)) await blobDel(b.hash);
+  } catch {}
+}
 
 // Pure-JS browser ZIP reader (store + DEFLATE via DecompressionStream)
 async function inflateRawBytes(bytes) {
@@ -639,8 +719,9 @@ async function ensureProjIndex(proj) {
     proj._fileCache.set(r.path, b);
   }
   for (const s of sList) {
+    if (s.etag) { snapMeta[s.path] = s.etag; continue; } // manifest entries carry their etag
     const b = s.content instanceof Uint8Array ? s.content : textEnc.encode(String(s.content || ''));
-    snapMeta[s.path] = s.etag || bytesEtag(b);
+    snapMeta[s.path] = bytesEtag(b);
   }
   proj.fileMeta = fileMeta; proj.snapMeta = snapMeta;
   await dbPut('projects', serializeProjMeta(proj));
@@ -1351,6 +1432,7 @@ async function closeProject(projRoot) {
   await dbDel('projects', projRoot);
   if (p.kind !== 'fsa') await dbDelByProj('files', projRoot);
   await dbDelByProj('snapshots', projRoot);
+  gcBlobs();
   if (projRoot === root) {
     const next = [...projects.keys()].pop() || null;
     if (next) {
@@ -1815,6 +1897,54 @@ addEventListener('beforeunload', e => {
   if ([...tabs.values()].some(isDirty) || [...projects.values()].some(p => p.root !== root && p.tabs.some(t => t.dirty))) e.preventDefault();
 });
 
+// ---------- optional local companion (step 3: real shell / git / fs on the user's OWN machine) ----------
+// bridge.mjs never executes anything. The companion (companion/companion.mjs) is a separate
+// program the user runs locally; it binds loopback only, serves one folder chosen at launch,
+// and requires a pairing token. The token is kept in sessionStorage only (like the GitHub
+// token) and is only ever sent to the loopback companion URL the user entered.
+let comp = null; // { base, token, pty, agent }
+try {
+  const u = sessionStorage.getItem('webideCompUrl'), tk = sessionStorage.getItem('webideCompToken');
+  if (u && tk) comp = { base: u, token: tk };
+} catch {}
+const COMP_URL_RE = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d{1,5})?\/?$/;
+async function compFetch(pathname, opts = {}) {
+  if (!comp) throw new Error('Companion is not connected.');
+  const r = await fetch(comp.base + pathname, { ...opts, headers: { authorization: 'Bearer ' + comp.token, ...(opts.headers || {}) } });
+  if (!r.ok) { let msg = `Companion HTTP ${r.status}`; try { msg = (await r.json()).error || msg; } catch {} throw new Error(msg); }
+  return r;
+}
+const compApi = async (pathname, opts) => (await compFetch(pathname, opts)).json();
+async function compConnect() {
+  const urlIn = window.prompt('Companion URL (run `node companion/companion.mjs --root <folder>` locally first):', comp?.base || 'http://127.0.0.1:47399');
+  if (!urlIn) return;
+  const base = urlIn.trim().replace(/\/$/, '');
+  if (!COMP_URL_RE.test(base)) return toast('Companion URL must be a loopback address (127.0.0.1 or localhost).', 'warn');
+  const token = window.prompt('Companion pairing token (printed by the companion at startup):', comp?.token || '');
+  if (!token) return;
+  const prev = comp;
+  comp = { base, token: token.trim() };
+  try {
+    const health = await (await fetch(base + '/health')).json();
+    if (!health?.ok) throw new Error('Unexpected companion health response.');
+    await compApi('/fs/list?path=');
+    comp.pty = !!health.pty; comp.agent = !!health.agent;
+    try { sessionStorage.setItem('webideCompUrl', base); sessionStorage.setItem('webideCompToken', comp.token); } catch {}
+    toast(`Companion connected at ${base}${comp.pty ? ' (PTY)' : ' (pipe mode)'}.`);
+  } catch (e) {
+    comp = prev;
+    toast(`Companion connection failed: ${e.message}`, 'warn');
+  }
+}
+function compDisconnect() {
+  for (const x of [...terms]) if (x.kind === 'comp') dropTerm(x);
+  comp = null;
+  try { sessionStorage.removeItem('webideCompUrl'); sessionStorage.removeItem('webideCompToken'); } catch {}
+  toast('Companion disconnected.');
+}
+const compExec = (cmd, argv = [], cwd = '') => compApi('/exec', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cmd, args: argv, cwd }) });
+const compGit = (argv = [], cwd = '') => compApi('/git', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ args: argv, cwd }) });
+
 // ---------- terminal panel (xterm.js browser-local shell over IndexedDB/FSA; zero server shell execution) ----------
 const terms = []; // { id, name, cwd, line, hist, attached, term?, fit?, box? }
 let termOn = null, termSeq = 0;
@@ -1962,6 +2092,34 @@ async function attachTerm(x) {
   Object.assign(x, { term, fit, box, attached: true, busy: false });
   for (const t of terms) if (t.attached) { t.box.hidden = t !== x; if (t === x) t.box.style.visibility = ''; }
   requestAnimationFrame(() => { fit.fit(); term.focus(); });
+  if (x.kind === 'comp') {
+    // Real shell on the user's machine, streamed from the local companion over WebSocket.
+    term.write('\x1b[38;5;245mWebIDE Companion Terminal — real shell on your machine (via the local companion).\x1b[0m\r\n');
+    if (!comp) { term.write('\x1b[31mCompanion is not connected. Run "Companion: Connect…" from the Command Palette.\x1b[0m\r\n'); return; }
+    const ws = new WebSocket(comp.base.replace(/^http/, 'ws') + '/term?token=' + encodeURIComponent(comp.token));
+    x.ws = ws;
+    ws.onopen = () => { ws.send(JSON.stringify({ t: 'r', c: term.cols, r: term.rows })); term.focus(); };
+    ws.onmessage = ev => {
+      try {
+        const m = JSON.parse(ev.data);
+        if (m.t === 'o') term.write(m.d);
+        else if (m.t === 'x') term.write(`\r\n\x1b[38;5;245m[process exited: ${m.code}]\x1b[0m\r\n`);
+      } catch {}
+    };
+    ws.onclose = () => { if (terms.includes(x) && x.attached) term.write('\r\n\x1b[38;5;245m[companion connection closed]\x1b[0m\r\n'); };
+    ws.onerror = () => { if (x.attached) term.write('\r\n\x1b[31m[companion connection error — is it still running?]\x1b[0m\r\n'); };
+    term.onData(d => { if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'i', d })); });
+    term.onResize(({ cols, rows }) => { if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'r', c: cols, r: rows })); });
+    term.attachCustomKeyEventHandler(e => {
+      if (e.type !== 'keydown') return true;
+      if (!isMac && e.ctrlKey && !e.altKey && !e.shiftKey) {
+        if (e.key === 'c' && term.hasSelection()) { navigator.clipboard.writeText(term.getSelection()); term.clearSelection(); return false; }
+        if (e.key === 'v') return false;
+      }
+      return true;
+    });
+    return;
+  }
   term.write('\x1b[38;5;245mWebIDE Browser-Local Shell — all commands stay inside this browser.\x1b[0m\r\nType \x1b[36mhelp\x1b[0m for commands.');
   term.write(termPrompt(x));
   let hIdx = -1;
@@ -2018,21 +2176,31 @@ function focusTerm(x) {
   renderTerms();
   if (x.attached) requestAnimationFrame(() => { x.fit.fit(); x.term.focus(); });
 }
-async function newTerminal() {
-  if (!root) throw new Error('Open a folder or GitHub repository first.');
+function spawnTerm(kind) {
   showPanel(true);
+  const baseName = kind === 'comp' ? 'companion' : 'local';
   const used = new Set(terms.map(t => t.name));
-  let name = 'local', k = 2;
-  while (used.has(name)) name = `local (${k++})`;
-  const x = { id: 't' + (++termSeq), name, cwd: '', line: '', hist: [], attached: false };
+  let name = baseName, k = 2;
+  while (used.has(name)) name = `${baseName} (${k++})`;
+  const x = { id: 't' + (++termSeq), name, kind, cwd: '', line: '', hist: [], attached: false };
   terms.push(x);
   focusTerm(x);
+}
+async function newTerminal() {
+  if (!root) throw new Error('Open a folder or GitHub repository first.');
+  spawnTerm('local');
+}
+async function newCompTerminal() {
+  if (!comp) await compConnect();
+  if (!comp) return;
+  spawnTerm('comp');
 }
 function killTerm(x = termOn) { if (x) dropTerm(x); }
 function dropTerm(x) {
   const i = terms.indexOf(x);
   if (i < 0) return;
   terms.splice(i, 1);
+  try { x.ws?.close(); } catch {}
   if (x.attached) { x.term.dispose(); x.box.remove(); }
   if (termOn === x) termOn = null;
   if (terms.length) { if (!termOn) focusTerm(terms[Math.min(i, terms.length - 1)]); else renderTerms(); } else showPanel(false);
@@ -2444,6 +2612,9 @@ const COMMANDS = () => [
   { label: 'Terminal: Create New Terminal', key: K.newTerm, run: newTerminal },
   { label: 'Terminal: Kill the Active Terminal Instance', run: () => killTerm() },
   { label: 'Terminal: Clear', run: () => termOn?.term.clear() },
+  { label: 'Terminal: New Companion Terminal', run: () => newCompTerminal().catch(fail) },
+  { label: 'Companion: Connect…', run: () => compConnect().catch(fail) },
+  { label: 'Companion: Disconnect', run: compDisconnect },
   ...[2, 4, 8].map(n => ({ label: `Indent Using Spaces: ${n}`, run: () => setIndent(true, n) })),
   ...[2, 4, 8].map(n => ({ label: `Indent Using Tabs: Tab Size ${n}`, run: () => setIndent(false, n) })),
   { label: 'Convert Indentation to Spaces', run: () => editor.getAction('editor.action.indentationToSpaces')?.run().then(updateStatus) },
@@ -2961,7 +3132,7 @@ async function openGitDiff(rel, staged) {
   if (!proj) return;
   const snap = await dbGet('snapshots', fKey(proj.id, rel));
   let original = '', modified = '';
-  try { if (snap?.content) original = textDec.decode(snap.content); } catch {}
+  try { const sb = await snapshotBytes(snap); if (sb) original = textDec.decode(sb); } catch {}
   try { modified = (await vfsReadFile(proj, rel)).text; } catch {}
   closeCompare();
   const u0 = monaco.Uri.file('/__git_orig__/' + rel), u1 = monaco.Uri.file('/__git_mod__/' + rel);
@@ -2996,19 +3167,19 @@ async function gitInitRepo() {
   const proj = activeProj();
   if (!proj) return toast('Open a folder first.', 'warn');
   const { files } = await vfsAllFiles(proj, { skipHeavy: true, limit: 15000 });
-  const snaps = [], snapMeta = {};
+  const snapMeta = {};
+  await dbDelByProj('snapshots', proj.id);
   for (let i = 0; i < files.length; i += 24) {
     const batch = files.slice(i, i + 24);
     await Promise.all(batch.map(async rel => {
       try {
         const content = await vfsReadBytes(proj, rel);
         snapMeta[rel] = bytesEtag(content);
-        snaps.push({ key: fKey(proj.id, rel), projectId: proj.id, path: rel, content, etag: snapMeta[rel] });
+        await snapshotPut(proj.id, rel, content); // manifest entry -> shared blob
       } catch {}
     }));
   }
-  await dbDelByProj('snapshots', proj.id);
-  if (snaps.length) await dbPutMany('snapshots', snaps);
+  gcBlobs();
   proj.isRepo = true; proj.branch = proj.branch || 'main'; proj.staged = []; proj.commits = proj.commits || []; proj.snapMeta = snapMeta;
   await dbPut('projects', serializeProjMeta(proj));
   toast('Initialized browser-local snapshot repository.');
@@ -3024,7 +3195,8 @@ async function gitDiscard(it) {
   if (it.untracked) await vfsDelete(proj, it.path);
   else {
     const snap = await dbGet('snapshots', fKey(proj.id, it.path));
-    if (snap?.content) await vfsWriteFile(proj, it.path, snap.content, { force: true });
+    const sb = await snapshotBytes(snap);
+    if (sb) await vfsWriteFile(proj, it.path, sb, { force: true });
   }
   await renderTree().catch(() => {});
   await reloadClean();
@@ -3042,7 +3214,7 @@ async function gitCommit() {
     try {
       const b = await vfsReadBytes(proj, rel), etag = bytesEtag(b);
       proj.snapMeta[rel] = etag;
-      await dbPut('snapshots', { key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: b, etag });
+      await snapshotPut(proj.id, rel, b); // unchanged files reuse their blob: incremental
     } catch {
       delete proj.snapMeta[rel];
       await dbDel('snapshots', fKey(proj.id, rel));
@@ -3201,19 +3373,22 @@ async function cloneGithubIntoBrowser(slug, branch = '', progress) {
   const { meta, branch: ref, entries, skipped } = await fetchGithubSnapshot(slug, branch, progress);
   const id = 'gh:' + slug + ':' + safeUid(6);
   const repoName = slug.split('/').pop();
-  const fileRecs = [], snapRecs = [], fileMeta = {}, snapMeta = {}, now = Date.now();
+  const fileRecs = [], fileMeta = {}, snapMeta = {}, now = Date.now();
   for (const [rel, bytes] of entries) {
     const etag = bytesEtag(bytes);
     fileMeta[rel] = etag; snapMeta[rel] = etag;
     fileRecs.push({ key: fKey(id, rel), projectId: id, path: rel, content: bytes, etag, mtime: now });
-    snapRecs.push({ key: fKey(id, rel), projectId: id, path: rel, content: bytes, etag });
   }
   const proj = emptyProj(id, {
     name: repoName, kind: 'gh', isRepo: true, branch: ref,
     remote: { slug, url: `https://github.com/${slug}.git`, githubUrl: meta.htmlUrl || `https://github.com/${slug}`, private: !!meta.private },
     fileMeta, snapMeta,
   });
-  await Promise.all([dbPutMany('files', fileRecs), dbPutMany('snapshots', snapRecs), dbPut('projects', serializeProjMeta(proj))]);
+  await Promise.all([dbPutMany('files', fileRecs), dbPut('projects', serializeProjMeta(proj))]);
+  // Snapshots as manifest entries over shared blobs (identical files stored once).
+  for (let i = 0; i < entries.length; i += 24) {
+    await Promise.all(entries.slice(i, i + 24).map(([rel, bytes]) => snapshotPut(id, rel, bytes)));
+  }
   if (root) hibernateCurrent(root);
   projects.set(id, proj);
   root = id;
@@ -3227,7 +3402,7 @@ async function gitPullFromGithub({ quiet = false } = {}) {
   const slug = proj.remote.slug;
   if (proj.remote.private && !ghToken) { openGitDialog('remote'); throw new Error(`${slug} is private: add a GitHub access token to pull.`); }
   const { entries } = await fetchGithubSnapshot(slug, proj.branch || '');
-  const fileRecs = [], snapRecs = [], fileMeta = {}, snapMeta = {}, now = Date.now();
+  const fileRecs = [], fileMeta = {}, snapMeta = {}, now = Date.now();
   for (const [rel, bytes] of entries) {
     const etag = bytesEtag(bytes);
     snapMeta[rel] = etag;
@@ -3237,7 +3412,6 @@ async function gitPullFromGithub({ quiet = false } = {}) {
       fileMeta[rel] = etag;
       fileRecs.push({ key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: bytes, etag, mtime: now });
     }
-    snapRecs.push({ key: fKey(proj.id, rel), projectId: proj.id, path: rel, content: bytes, etag });
   }
   if (proj.kind !== 'fsa') {
     proj.fileMeta = fileMeta; proj._fileCache = null;
@@ -3246,7 +3420,11 @@ async function gitPullFromGithub({ quiet = false } = {}) {
   }
   proj.snapMeta = snapMeta;
   await Promise.all([dbDelByProj('snapshots', proj.id), dbPut('projects', serializeProjMeta(proj))]);
-  await dbPutMany('snapshots', snapRecs);
+  // Manifest snapshots over shared blobs: files unchanged since last pull reuse their blob.
+  for (let i = 0; i < entries.length; i += 24) {
+    await Promise.all(entries.slice(i, i + 24).map(([rel, bytes]) => snapshotPut(proj.id, rel, bytes)));
+  }
+  gcBlobs();
   await renderTree().catch(() => {});
   await reloadClean();
   await refreshGit(true);

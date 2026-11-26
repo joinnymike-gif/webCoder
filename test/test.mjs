@@ -3,7 +3,7 @@
 // public host allowlisting, anti-crawler rules, token UA/IP binding, IP rate limits,
 // and removal of cross-client server filesystem/extension/shell endpoints.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -34,6 +34,24 @@ assert.ok(!/localStorage\.webideGhToken\s*=/.test(appJs) && !appJs.includes('loc
 assert.ok(appJs.includes("setAttribute('sandbox', 'allow-scripts')"), 'extension host iframe is sandboxed without allow-same-origin');
 assert.ok(!appJs.includes('__webideExtDefine'), 'page no longer defines the in-page extension factory hook');
 assert.ok(extHostJs.includes('__webideExtDefine'), 'extension factory hook lives in the sandbox host');
+// Step 3 (companion): the execution layer is a separate user-run program, never part of
+// the server. It must parse, bind loopback in the page's CSP only, and the pairing token
+// is sessionStorage-only in the page.
+const bridgeSrc = fs.readFileSync(path.join(rootDir, 'bridge.mjs'), 'utf8');
+const companionFile = path.join(rootDir, 'companion', 'companion.mjs');
+assert.equal(spawnSync(process.execPath, ['--check', companionFile]).status, 0, 'companion parses');
+assert.ok(bridgeSrc.includes('ws://127.0.0.1:*') && bridgeSrc.includes('http://localhost:*'), 'app CSP connect-src allows loopback companion only');
+assert.ok(!/connect-src[^;]*https:\/\/\*/.test(bridgeSrc), 'connect-src has no wildcard hosts');
+assert.ok(appJs.includes('webideCompToken') && appJs.includes("sessionStorage.getItem('webideCompToken')"), 'companion token kept in sessionStorage');
+assert.ok(!appJs.includes('localStorage.webideComp'), 'companion token never touches localStorage');
+assert.ok(appJs.includes("'/term?token='"), 'companion terminal connects over authenticated WebSocket');
+// Step 4 (incremental snapshots): content-addressed blobs (SHA-256), manifest snapshot
+// records (no inline content in new writers), OPFS backend with IndexedDB fallback.
+assert.ok(appJs.includes("createObjectStore('blobs'") && appJs.includes('IDB_VER = 2'), 'blobs object store exists (IDB v2)');
+assert.ok(appJs.includes("crypto.subtle.digest('SHA-256'"), 'blob ids are SHA-256 content hashes');
+assert.ok(appJs.includes("getDirectoryHandle('webide-blobs'") && appJs.includes('navigator.storage?.getDirectory'), 'OPFS blob backend is feature-detected');
+assert.ok(appJs.includes('async function snapshotPut') && appJs.includes('async function snapshotBytes'), 'snapshot manifest helpers exist');
+assert.ok(!/dbPut\('snapshots', \{[^}]*\bcontent:/.test(appJs) && !appJs.includes('snapRecs'), 'no snapshot writer inlines file content anymore');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function waitReady(baseUrl) {
@@ -62,7 +80,7 @@ const bridge = spawn(process.execPath, [path.join(rootDir, 'bridge.mjs')], {
   stdio: 'inherit',
 });
 
-let prodBridge = null;
+let prodBridge = null, companionProc = null;
 try {
   await waitReady(B);
   const f = (p, o = {}) => fetch(B + p, o);
@@ -206,6 +224,63 @@ try {
   const evilPort = await rawHttp(PROD_PORT, '/en', 'GET', { host: 'ide.example.com:"><x', 'user-agent': BROWSER_UA, 'x-real-ip': '203.0.113.14' });
   assert.ok(!evilPort.body.includes('"><x'), 'Host port is not echoed into HTML');
 
+  // Step 3 integration: the companion is a separate user-run process (the bridge above
+  // still executes nothing). Verify pairing-token auth, root-confined fs, exec, git and
+  // the WebSocket terminal end to end.
+  const compRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'webide-comp-')));
+  const COMP_PORT = 47431, CB = `http://127.0.0.1:${COMP_PORT}`, CT = 'test-pairing-token';
+  companionProc = spawn(process.execPath, [companionFile, '--root', compRoot, '--port', String(COMP_PORT), '--token', CT], { stdio: 'inherit' });
+  try {
+    await waitReady(CB);
+    const ch = { authorization: 'Bearer ' + CT, 'content-type': 'application/json' };
+    assert.equal((await fetch(CB + '/fs/list?path=')).status, 401, 'companion rejects missing pairing token');
+    const wr = await fetch(CB + '/fs/write', { method: 'POST', headers: ch, body: JSON.stringify({ path: 'a/b.txt', content: Buffer.from('hello blob').toString('base64') }) });
+    assert.equal(wr.status, 200, 'companion fs/write inside root');
+    assert.equal(await (await fetch(CB + '/fs/read?path=a/b.txt', { headers: ch })).text(), 'hello blob', 'companion fs/read round-trips');
+    const lst = await (await fetch(CB + '/fs/list?path=a', { headers: ch })).json();
+    assert.ok(lst.entries.some(e => e.name === 'b.txt'), 'companion fs/list sees the file');
+    assert.equal((await fetch(CB + '/fs/read?path=' + encodeURIComponent('../outside.txt'), { headers: ch })).status, 403, 'companion blocks path escape from its root');
+    const ex = await (await fetch(CB + '/exec', { method: 'POST', headers: ch, body: JSON.stringify({ cmd: 'echo', args: ['comp-exec-ok'] }) })).json();
+    assert.equal(ex.code, 0); assert.ok(ex.stdout.includes('comp-exec-ok'), 'companion exec runs a real command');
+    const gi = await (await fetch(CB + '/git', { method: 'POST', headers: ch, body: JSON.stringify({ args: ['init'] }) })).json();
+    assert.equal(gi.code, 0, 'companion git init works');
+    const gs = await (await fetch(CB + '/git', { method: 'POST', headers: ch, body: JSON.stringify({ args: ['status', '--porcelain'] }) })).json();
+    assert.ok(gs.stdout.includes('a/'), 'companion git status sees untracked files');
+    // WebSocket terminal: minimal RFC 6455 client (masked text frames out, plain frames in).
+    const wsOut = await new Promise((resolve, reject) => {
+      const key = Buffer.from('0123456789abcdef').toString('base64');
+      const rq = http.request({ host: '127.0.0.1', port: COMP_PORT, path: '/term?token=' + CT, headers: { connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-key': key, 'sec-websocket-version': '13' } });
+      const timer = setTimeout(() => reject(new Error('companion terminal timed out')), 8000);
+      rq.on('upgrade', (res, socket) => {
+        let buf = Buffer.alloc(0), text = '';
+        const mask = Buffer.from([1, 2, 3, 4]);
+        const payload = Buffer.from(JSON.stringify({ t: 'i', d: 'echo comp-ws-ok\n' }));
+        const head = Buffer.from([0x81, 0x80 | payload.length]);
+        socket.write(Buffer.concat([head, mask, Buffer.from(payload.map((b, i) => b ^ mask[i % 4]))]));
+        socket.on('data', chunk => {
+          buf = Buffer.concat([buf, chunk]);
+          for (;;) {
+            if (buf.length < 2) return;
+            let len = buf[1] & 0x7f, off = 2;
+            if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4; }
+            else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); off = 10; }
+            if (buf.length < off + len) return;
+            const frame = buf.subarray(off, off + len); buf = buf.subarray(off + len);
+            try { const m = JSON.parse(frame.toString('utf8')); if (m.t === 'o') text += m.d; } catch {}
+            if (text.includes('comp-ws-ok')) { clearTimeout(timer); socket.destroy(); resolve(text); return; }
+          }
+        });
+        socket.on('error', reject);
+      });
+      rq.on('error', reject);
+      rq.end();
+    });
+    assert.ok(wsOut.includes('comp-ws-ok'), 'companion WebSocket terminal echoes a real shell');
+  } finally {
+    companionProc.kill(); companionProc = null;
+    fs.rmSync(compRoot, { recursive: true, force: true });
+  }
+
   // Verify ZERO files/folders were created on the server (stateless host)
   assert.deepEqual(fs.readdirSync(home), [], 'server never writes user files or state to disk');
 
@@ -213,5 +288,6 @@ try {
 } finally {
   bridge.kill();
   prodBridge?.kill();
+  companionProc?.kill();
   fs.rmSync(home, { recursive: true, force: true });
 }

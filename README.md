@@ -25,6 +25,7 @@
 | [.env.example](.env.example) | 公网部署与反爬虫/IP 限流环境变量模板 |
 | [test/test.mjs](test/test.mjs) | 端到端自检脚本，验证无状态服务端安全策略、零磁盘持久化、`blob:` CSP、公网 Host 校验、反爬虫与 IP 限流及旧版写接口移除 |
 | [test/mock-acp.mjs](test/mock-acp.mjs) | 保留的测试用 Mock ACP 脚本（当前浏览器隐私模式下默认不启用服务端 Agent 执行） |
+| [companion/companion.mjs](companion/companion.mjs) | **可选**的本地执行层（用户在自己机器上手动运行，零依赖）：仅监听回环地址、启动时选定一个根目录、配对令牌鉴权，为 IDE 提供真实 Shell 终端（WebSocket）、真实 git 与该目录内的文件读写；bridge 服务端本身仍不执行任何代码 |
 
 ### 快速启动
 
@@ -59,7 +60,7 @@ docker compose up -d --build
 - `WEBIDE_TRUST_PROXY`：置于 Caddy/Nginx 后方时设为 `1`，从反向代理覆盖写入的 `X-Real-IP`（或 `X-Forwarded-For` 最后一跳）解析真实客户端 IP。不信任 `CF-Connecting-IP`（客户端可伪造）；前面再套 Cloudflare 时，请让反向代理只接受 Cloudflare IP 并用 `CF-Connecting-IP` 设置 `X-Real-IP`。
 - `WEBIDE_ORIGINS`：允许访问的额外来源列表（逗号分隔）。
 - `WEBIDE_RL_PAGE` / `WEBIDE_RL_SESSION` / `WEBIDE_RL_PROXY` / `WEBIDE_RL_DL` / `WEBIDE_RL_DL_MB` / `WEBIDE_ALLOW_BOTS`：按单 IP 调节限流阈值及爬虫放行开关（测试用）。
-- **浏览器端 IndexedDB（`webide-browser-v1`）**：按浏览器 Profile 与 Origin 严格隔离，包含 `projects`（工程元数据与本地 `FileSystemDirectoryHandle`）、`files`（GitHub 克隆及浏览器导入文件内容）、`snapshots`（浏览器侧基线快照）、`extensions`（已下载并解包的 VS Code 插件与主题/语法/片段/Web Bundle）和 `meta`（多工程顺序与活跃状态）。
+- **浏览器端 IndexedDB（`webide-browser-v1`，v2）**：按浏览器 Profile 与 Origin 严格隔离，包含 `projects`（工程元数据与本地 `FileSystemDirectoryHandle`）、`files`（GitHub 克隆及浏览器导入文件内容）、`snapshots`（浏览器侧基线快照的**清单**：每路径仅存 SHA-256 哈希/大小/etag，不再内嵌文件内容）、`blobs`（内容寻址 Blob 索引）、`extensions`（已下载并解包的 VS Code 插件与主题/语法/片段/Web Bundle）和 `meta`（多工程顺序与活跃状态）。Blob 字节优先存入 **OPFS**（`webide-blobs/`，浏览器支持时），否则存 IndexedDB `blobs`；相同内容只存一份，提交快照只写变化的 Blob（增量 + 去重），无引用的 Blob 会被回收。旧版内嵌内容的快照记录继续可读。
 - **浏览器端 `localStorage`**：仅保存布局偏好（`webidePrefs`）、当前配色主题键（`webideTheme`）与扩展配置键值。
 
 ### 核心架构与隐私隔离设计
@@ -106,6 +107,15 @@ docker compose up -d --build
 - **浏览器内置沙箱终端**：基于 `xterm.js` 提供纯前端命令环境（`help`、`pwd`、`ls`、`cd`、`cat`、`head`、`touch`、`mkdir`、`rm`、`find`、`git status|log`、`ext list`、`clear`），仅操作当前浏览器工作区。
 - **输入法与弹窗交互安全**：全输入框支持 `composing(e)` 防 IME 误触；`quickOpen()` 打开前自动清除触发按钮焦点并延迟关闭执行，避免 `Enter` 关闭弹窗时误二次触发开启按钮。
 
+#### 6. 可选本地 Companion 执行层（真实 Shell / Git，服务端仍零执行）
+浏览器沙箱终端只能操作浏览器内工作区；需要真实 Shell、真实 `git` 与真实文件夹时，可在**自己机器上**手动运行零依赖的 companion（它不是服务端的一部分，bridge 永远不启动它、也不执行任何代码）：
+```sh
+node companion/companion.mjs --root ~/my-project   # 可选 --port 47399 / --agent-cmd "pi --acp"
+```
+- **安全模型**：仅绑定 `127.0.0.1`、只服务启动时 `--root` 选定的一个目录（路径逃逸与符号链接逃逸均拒绝）、所有请求都要带启动时打印的配对令牌（页面端只存 `sessionStorage`）、仅接受回环来源的浏览器跨域请求；应用 CSP 的 `connect-src` 也只额外放行回环地址。`--agent-cmd` 可选，用于把本地 ACP Agent 的 stdio 以 WebSocket 透传给页面。
+- **页面接入**：命令面板 `Companion: Connect…` 输入地址与令牌完成配对；`Terminal: New Companion Terminal` 打开真实 Shell 终端（装有可选依赖 `node-pty` 时为真 PTY，否则管道模式）；另有 `/exec`、`/git`、`/fs/*` HTTP 接口供页面调用真实命令与文件操作。
+- **自检覆盖**：`test/test.mjs` 会真实启动 companion 并验证令牌鉴权、根目录 confinement、exec/git 与 WebSocket 终端回显。
+
 ### 常用快捷键
 
 | 功能 | macOS | Windows / Linux |
@@ -150,6 +160,7 @@ A lightweight, privacy-first browser IDE where **all user data—workspaces, loc
 | [.env.example](.env.example) | Environment variable template for public domains and anti-crawler / rate-limit tuning |
 | [test/test.mjs](test/test.mjs) | Automated self-check verifying stateless server behavior, zero disk writes, CSP policy, public host allowlisting, bot blocking, IP rate limits, and removal of legacy endpoints |
 | [test/mock-acp.mjs](test/mock-acp.mjs) | Retained mock ACP script (server-side agent spawning is disabled in browser-local privacy mode) |
+| [companion/companion.mjs](companion/companion.mjs) | **Optional** local execution layer the user runs on their own machine (zero dependencies): loopback-only, one root folder chosen at launch, pairing-token auth; gives the IDE a real shell terminal (WebSocket), real git and fs access inside that folder. The bridge server itself still executes nothing |
 
 ### Quick Start
 
@@ -185,7 +196,7 @@ Built-in zero-password abuse protection:
 - `WEBIDE_ORIGINS`: Comma-separated list of additional allowed CORS origins.
 - `WEBIDE_RL_PAGE` / `WEBIDE_RL_SESSION` / `WEBIDE_RL_PROXY` / `WEBIDE_RL_DL` / `WEBIDE_RL_DL_MB` / `WEBIDE_ALLOW_BOTS`: Per-IP rate-limit/bandwidth thresholds and optional bot bypass flag.
 - `WEBIDE_NOINDEX`: Set `1` to keep the deployment out of search engines (staging / private hosts).
-- **Browser IndexedDB (`webide-browser-v1`)**: Strictly isolated per browser profile and origin across 5 stores: `projects` (project metadata & `FileSystemDirectoryHandle`), `files` (GitHub clones & imported local files), `snapshots` (browser-local baseline snapshots), `extensions` (unpacked VS Code extensions, themes, grammars, snippets, and browser bundles), and `meta` (project taskbar ordering and active selection).
+- **Browser IndexedDB (`webide-browser-v1`, v2)**: Strictly isolated per browser profile and origin across 6 stores: `projects` (project metadata & `FileSystemDirectoryHandle`), `files` (GitHub clones & imported local files), `snapshots` (baseline snapshot **manifests**: per-path SHA-256 hash/size/etag, no inline content), `blobs` (content-addressed blob index), `extensions` (unpacked VS Code extensions, themes, grammars, snippets, and browser bundles), and `meta` (project taskbar ordering and active selection). Blob bytes live in **OPFS** (`webide-blobs/`) when available, else in the `blobs` store; identical contents are stored once and snapshot commits write only changed blobs (incremental + deduplicated), with unreferenced blobs garbage-collected. Legacy inline-content snapshot records remain readable.
 - **Browser `localStorage`**: Stores layout preferences (`webidePrefs`), active color theme key (`webideTheme`), and extension setting values.
 
 ### Core Architecture & Privacy Isolation
@@ -231,6 +242,15 @@ Built-in zero-password abuse protection:
 - **GitHub Branches & Commit History**: Projects with a GitHub remote show a **Branches** list (default / current / protected marked) and the **Commits** of the selected branch (30 per page, load more) in Source Control. Tapping a branch only browses its history; the ⇄ button switches the workspace to it (with a confirmation when there are uncommitted changes; not offered for local-folder projects so disk files are never overwritten). Tapping a commit opens a full-screen detail view: full message, author and time, copyable SHA, clickable parents, +/− stats and a colored per-file diff that wraps on phones. Data comes straight from the GitHub API in the browser: public repos need no token (60 requests/hour), private repos use the saved access token.
 - **In-Browser Sandbox Terminal**: Powers `xterm.js` with client-side workspace commands (`help`, `pwd`, `ls`, `cd`, `cat`, `head`, `touch`, `mkdir`, `rm`, `find`, `git status|log`, `ext list`, `clear`) without any server shell access.
 - **IME & Modal Reliability**: All inputs use `composing(e)` to prevent CJK IME confirmation misfires, and `quickOpen()` blurs trigger buttons prior to `showModal()` so `Enter` dismissal never re-activates the opener button.
+
+#### 6. Optional Local Companion (real shell / git — the server still executes nothing)
+The browser sandbox terminal only sees the browser workspace. For a real shell, real `git` and a real folder, run the zero-dependency companion **on your own machine** (it is not part of the server; the bridge never starts it and never executes code):
+```sh
+node companion/companion.mjs --root ~/my-project   # optional --port 47399 / --agent-cmd "pi --acp"
+```
+- **Security model**: binds `127.0.0.1` only, serves only the `--root` folder chosen at launch (path and symlink escapes rejected), every request needs the pairing token printed at startup (the page keeps it in `sessionStorage` only), browser origins must be loopback, and the app CSP's `connect-src` extra allowance is loopback-only. `--agent-cmd` optionally relays a local ACP agent's stdio to the page over WebSocket.
+- **In the IDE**: `Companion: Connect…` pairs the page, `Terminal: New Companion Terminal` opens a real shell (a true PTY when the optional `node-pty` package is installed, pipe mode otherwise), and `/exec`, `/git`, `/fs/*` endpoints expose real commands and files.
+- **Coverage**: `test/test.mjs` boots a real companion and verifies token auth, root confinement, exec/git, and WebSocket terminal echo.
 
 ### Keyboard Shortcuts
 

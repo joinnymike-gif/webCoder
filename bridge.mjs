@@ -53,7 +53,10 @@ const LANDING_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'sel
 // or blob: workers/extension shims — no CDN script sources, no 'unsafe-inline', no 'unsafe-eval'.
 // style-src keeps 'unsafe-inline' (the UI sets many inline style properties); frame-src 'self'
 // covers the sandboxed extension host (/ext-host.html) and the srcdoc Markdown preview.
-const APP_CSP = "default-src 'none'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https:; worker-src 'self' blob:; frame-src 'self' blob: data:; frame-ancestors 'none'";
+// connect-src additionally allows loopback only (127.0.0.1 / localhost, any port) so the page
+// can talk to the OPTIONAL user-run local companion (companion/companion.mjs): real shell/git/fs
+// stay on the user's own machine; this server still executes nothing.
+const APP_CSP = "default-src 'none'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https: http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; worker-src 'self' blob:; frame-src 'self' blob: data:; frame-ancestors 'none'";
 const pageCache = new Map(); // `${file}|${origin}` -> { mtimeMs, raw, gz }
 function getPagePayload(file, origin) {
   const abs = path.join(ROOT, file);
