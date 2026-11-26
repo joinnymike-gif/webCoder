@@ -14,11 +14,26 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(dir, '..');
 const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'webide-stateless-')));
 
-// Syntax check web/index.html inline scripts as part of self-check
+// Syntax check the split frontend bundles (web/app.js + web/ext-host.js) as part of self-check.
+// web/index.html is a thin shell: it must reference the external bundles, contain no inline
+// executable script, and load no code from CDN hosts (all dependencies are self-hosted).
 const html = fs.readFileSync(path.join(rootDir, 'web', 'index.html'), 'utf8');
-const scripts = html.match(/<script>([\s\S]*?)<\/script>/g) || [];
-assert.ok(scripts.length >= 1, 'web/index.html has inline script');
-for (const s of scripts) new Function(s.replace(/^<script>|<\/script>$/g, ''));
+const appJs = fs.readFileSync(path.join(rootDir, 'web', 'app.js'), 'utf8');
+const extHostJs = fs.readFileSync(path.join(rootDir, 'web', 'ext-host.js'), 'utf8');
+new Function(appJs);
+new Function(extHostJs);
+assert.ok(html.includes('<script src="/app.js"></script>'), 'index.html loads /app.js');
+assert.ok(html.includes('<link rel="stylesheet" href="/app.css">'), 'index.html loads /app.css');
+assert.ok(!/<script(?![^>]*\bsrc=)[^>]*>/.test(html.replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/, '')), 'index.html has no inline executable script');
+assert.ok(!/cdn\.jsdelivr\.net|cdnjs\.cloudflare\.com/.test(html + appJs), 'no CDN script/style hosts remain in the app');
+// GitHub token: sessionStorage only, legacy localStorage copy deleted, never persisted.
+assert.ok(appJs.includes('sessionStorage.webideGhToken'), 'gh token stored in sessionStorage');
+assert.ok(appJs.includes("localStorage.removeItem('webideGhToken')"), 'legacy localStorage gh token is deleted');
+assert.ok(!/localStorage\.webideGhToken\s*=/.test(appJs) && !appJs.includes('localStorage.webideGhToken ||'), 'gh token is never written to/read from localStorage');
+// Extension sandbox: code runs in the opaque-origin host, not in the page.
+assert.ok(appJs.includes("setAttribute('sandbox', 'allow-scripts')"), 'extension host iframe is sandboxed without allow-same-origin');
+assert.ok(!appJs.includes('__webideExtDefine'), 'page no longer defines the in-page extension factory hook');
+assert.ok(extHostJs.includes('__webideExtDefine'), 'extension factory hook lives in the sandbox host');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function waitReady(baseUrl) {
@@ -57,6 +72,27 @@ try {
   assert.equal(page.status, 200, 'serves index.html');
   const csp = page.headers.get('content-security-policy') || '';
   assert.ok(csp.includes('script-src') && csp.includes('blob:') && !csp.includes("'unsafe-eval'"), 'CSP allows blob scripts without unsafe-eval');
+  const scriptSrc = (csp.match(/script-src[^;]*/) || [''])[0];
+  assert.ok(scriptSrc.includes("'self'") && !scriptSrc.includes("'unsafe-inline'") && !/jsdelivr|cdnjs/.test(scriptSrc), 'CSP script-src is same-origin only, no unsafe-inline, no CDN');
+
+  // Split static assets: app bundles, sandbox host page, self-hosted vendor tree
+  const appJsRes = await f('/app.js');
+  assert.equal(appJsRes.status, 200, 'serves /app.js');
+  assert.ok((appJsRes.headers.get('content-type') || '').includes('javascript'), '/app.js is javascript');
+  const appEtag = appJsRes.headers.get('etag');
+  assert.ok(appEtag, '/app.js has an etag');
+  assert.equal((await f('/app.js', { headers: { 'if-none-match': appEtag } })).status, 304, '/app.js honours If-None-Match');
+  assert.equal((await f('/app.css')).status, 200, 'serves /app.css');
+  const extHostRes = await f('/ext-host.html');
+  assert.equal(extHostRes.status, 200, 'serves /ext-host.html');
+  assert.ok((extHostRes.headers.get('content-security-policy') || '').includes("frame-ancestors 'self'"), 'ext-host page is frameable only by the app');
+  assert.equal((await f('/ext-host.js')).status, 200, 'serves /ext-host.js');
+  const loaderRes = await f('/vendor/monaco/min/vs/loader.js');
+  assert.equal(loaderRes.status, 200, 'serves self-hosted Monaco loader');
+  assert.ok((loaderRes.headers.get('cache-control') || '').includes('immutable'), 'vendor assets are immutable-cached');
+  assert.equal((await f('/vendor/xterm/xterm.js')).status, 200, 'serves self-hosted xterm');
+  assert.notEqual((await f('/vendor/../bridge.mjs')).status, 200, 'static traversal outside web/ is never served');
+  assert.notEqual((await f('/vendor/%2e%2e/bridge.mjs')).status, 200, 'encoded static traversal is never served');
   assert.equal(page.headers.get('x-frame-options'), 'DENY');
   assert.ok((page.headers.get('x-robots-tag') || '').startsWith('index'), 'app page is indexable');
   const pageHtml = await page.text();

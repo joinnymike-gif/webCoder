@@ -1,0 +1,8 @@
+Self-hosted third-party dependencies (downloaded from npm, pinned versions):
+- monaco-editor 0.52.2 (MIT) — vendor/monaco/min
+- @xterm/xterm 5.5.0 (MIT) — vendor/xterm/xterm.js, xterm.css
+- @xterm/addon-fit 0.10.0 (MIT) — vendor/xterm/addon-fit.js
+- markdown-it 14.1.0 (MIT) — vendor/markdown-it/markdown-it.min.js
+- prettier 3.3.3 (MIT) — vendor/prettier/standalone.js + plugins used by the IDE
+Previously these were loaded from cdnjs/jsDelivr at runtime; they are now served
+same-origin so the IDE works offline and CSP needs no CDN script sources.

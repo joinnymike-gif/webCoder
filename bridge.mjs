@@ -49,7 +49,11 @@ const PAGES = {
   '/favicon.svg': ['site/favicon.svg', 'image/svg+xml'],
 };
 const LANDING_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'";
-const APP_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline' blob: https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; font-src https://cdnjs.cloudflare.com data:; img-src 'self' data: https:; connect-src 'self' https:; worker-src blob:; frame-ancestors 'none'";
+// App CSP: all executable code is same-origin (app.js, ext-host.js, self-hosted vendor/)
+// or blob: workers/extension shims — no CDN script sources, no 'unsafe-inline', no 'unsafe-eval'.
+// style-src keeps 'unsafe-inline' (the UI sets many inline style properties); frame-src 'self'
+// covers the sandboxed extension host (/ext-host.html) and the srcdoc Markdown preview.
+const APP_CSP = "default-src 'none'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: https:; connect-src 'self' https:; worker-src 'self' blob:; frame-src 'self' blob: data:; frame-ancestors 'none'";
 const pageCache = new Map(); // `${file}|${origin}` -> { mtimeMs, raw, gz }
 function getPagePayload(file, origin) {
   const abs = path.join(ROOT, file);
@@ -123,6 +127,34 @@ function sitemapXml(origin) {
   return '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n'
     + SITEMAP_PATHS.map(p => `<url><loc>${origin}${p}</loc>${p === '/' ? '' : alt}</url>`).join('\n')
     + '\n</urlset>\n';
+}
+
+// ---------- static app assets (split frontend + self-hosted vendor tree) ----------
+// web/index.html is now a thin shell; the app ships as /app.css + /app.js, the extension
+// sandbox host as /ext-host.html + /ext-host.js, and every third-party dependency is
+// vendored under /vendor/ (pinned, see web/vendor/VERSIONS.txt) instead of CDN-loaded.
+const STATIC_MIME = {
+  '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8', '.json': 'application/json; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8', '.svg': 'image/svg+xml',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.gif': 'image/gif', '.wasm': 'application/wasm',
+};
+const staticCache = new Map(); // abs path -> { mtimeMs, raw, gz, etag }
+function staticPayload(abs) {
+  const st = fs.statSync(abs);
+  let c = staticCache.get(abs);
+  if (!c || c.mtimeMs !== st.mtimeMs) {
+    const raw = fs.readFileSync(abs);
+    const gz = /\.(js|css|html|json|txt|svg)$/.test(abs) && raw.length > 1024 ? zlib.gzipSync(raw, { level: 6 }) : null;
+    c = { mtimeMs: st.mtimeMs, raw, gz, etag: `"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"` };
+    if (staticCache.size > 256) staticCache.clear();
+    staticCache.set(abs, c);
+  }
+  return c;
+}
+function isStaticPath(p) {
+  return p === '/app.js' || p === '/app.css' || p === '/ext-host.js' || p === '/ext-host.html' || p.startsWith('/vendor/');
 }
 
 const rlBuckets = new Map();
@@ -407,6 +439,26 @@ const server = http.createServer(async (req, res) => {
     // Block automated scrapers / crawlers (known search / AI engines may read public pages)
     if (isBlockedBot(req, isPublic)) {
       return reply(res, 403, 'forbidden (automated client)');
+    }
+
+    if ((req.method === 'GET' || req.method === 'HEAD') && isStaticPath(p)) {
+      // Generous separate bucket: Monaco alone loads dozens of same-origin modules.
+      if (!enforceRate(res, `static:${ip}`, envPosInt('WEBIDE_RL_STATIC', 3000), 60_000)) return;
+      const abs = path.normalize(path.join(ROOT, 'web', '.' + p));
+      if (!abs.startsWith(path.join(ROOT, 'web') + path.sep) || !STATIC_MIME[path.extname(abs).toLowerCase()]) return reply(res, 404, 'not found');
+      let payload;
+      try { payload = staticPayload(abs); } catch { return reply(res, 404, 'not found'); }
+      const immutable = p.startsWith('/vendor/');
+      const cacheCtl = immutable ? 'public, max-age=31536000, immutable' : 'no-cache';
+      if (req.headers['if-none-match'] === payload.etag) {
+        res.writeHead(304, { etag: payload.etag, 'cache-control': cacheCtl }); return res.end();
+      }
+      const useGz = req.method === 'GET' && payload.gz && /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''));
+      return reply(res, 200, req.method === 'HEAD' ? '' : useGz ? payload.gz : payload.raw, STATIC_MIME[path.extname(abs).toLowerCase()], {
+        'cache-control': cacheCtl, etag: payload.etag,
+        'content-security-policy': p === '/ext-host.html' ? "default-src 'none'; script-src 'self' blob:; connect-src https:; frame-ancestors 'self'" : APP_CSP,
+        ...(useGz && { 'content-encoding': 'gzip', vary: 'Accept-Encoding' }),
+      });
     }
 
     if (p === '/sitemap.xml' && req.method === 'GET' && !NOINDEX) {
