@@ -52,6 +52,16 @@ assert.ok(appJs.includes("crypto.subtle.digest('SHA-256'"), 'blob ids are SHA-25
 assert.ok(appJs.includes("getDirectoryHandle('webide-blobs'") && appJs.includes('navigator.storage?.getDirectory'), 'OPFS blob backend is feature-detected');
 assert.ok(appJs.includes('async function snapshotPut') && appJs.includes('async function snapshotBytes'), 'snapshot manifest helpers exist');
 assert.ok(!/dbPut\('snapshots', \{[^}]*\bcontent:/.test(appJs) && !appJs.includes('snapRecs'), 'no snapshot writer inlines file content anymore');
+// Option (a) distribution: npm package + one-command CLI launcher.
+const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
+const cliFile = path.join(rootDir, 'bin', 'webcoder.mjs');
+assert.equal(pkg.name, 'webcoder', 'npm package name is webcoder');
+assert.equal(pkg.bin?.webcoder, 'bin/webcoder.mjs', 'package exposes the webcoder bin');
+assert.ok(pkg.files?.includes('bridge.mjs') && pkg.files?.includes('web/'), 'published files cover server + frontend');
+assert.equal(spawnSync(process.execPath, ['--check', cliFile]).status, 0, 'CLI parses');
+const cliSrc = fs.readFileSync(cliFile, 'utf8');
+assert.ok(cliSrc.includes("'.webcoder'") && cliSrc.includes('run.json'), 'CLI keeps run state under ~/.webcoder');
+assert.ok(cliSrc.includes('47321'), 'CLI has a base port to scan from');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function waitReady(baseUrl) {
@@ -279,6 +289,28 @@ try {
   } finally {
     companionProc.kill(); companionProc = null;
     fs.rmSync(compRoot, { recursive: true, force: true });
+  }
+
+  // Option (a) integration: the CLI starts the IDE on a free port, reports status,
+  // and stops it — with its state kept in an isolated HOME.
+  const cliHome = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'webide-cli-')));
+  const runCli = args => spawnSync(process.execPath, [cliFile, ...args], { env: { ...process.env, HOME: cliHome }, encoding: 'utf8', timeout: 30000 });
+  try {
+    const started = runCli(['start', '--no-open']);
+    assert.equal(started.status, 0, 'CLI start exits 0: ' + started.stderr);
+    assert.ok(/running: http:\/\/127\.0\.0\.1:\d+\//.test(started.stdout), 'CLI start prints the URL');
+    const st = JSON.parse(fs.readFileSync(path.join(cliHome, '.webcoder', 'run.json'), 'utf8'));
+    assert.ok(st.port >= 47321 && st.pid > 0, 'CLI state records pid + auto-picked port');
+    assert.ok((await fetch(`http://127.0.0.1:${st.port}/health`)).ok, 'CLI-started IDE answers /health');
+    const again = runCli(['start', '--no-open']);
+    assert.ok(again.stdout.includes('already running'), 'CLI start is idempotent while running');
+    assert.ok(runCli(['status']).stdout.includes('running'), 'CLI status reports running');
+    assert.ok(runCli(['stop']).stdout.includes('stopped'), 'CLI stop stops the instance');
+    assert.ok(runCli(['status']).stdout.includes('not running'), 'CLI status reports stopped');
+    assert.ok(!(await fetch(`http://127.0.0.1:${st.port}/health`).catch(() => null))?.ok, 'IDE is down after CLI stop');
+  } finally {
+    runCli(['stop']);
+    fs.rmSync(cliHome, { recursive: true, force: true });
   }
 
   // Verify ZERO files/folders were created on the server (stateless host)

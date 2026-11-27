@@ -26,10 +26,24 @@
 | [test/test.mjs](test/test.mjs) | 端到端自检脚本，验证无状态服务端安全策略、零磁盘持久化、`blob:` CSP、公网 Host 校验、反爬虫与 IP 限流及旧版写接口移除 |
 | [test/mock-acp.mjs](test/mock-acp.mjs) | 保留的测试用 Mock ACP 脚本（当前浏览器隐私模式下默认不启用服务端 Agent 执行） |
 | [companion/companion.mjs](companion/companion.mjs) | **可选**的本地执行层（用户在自己机器上手动运行，零依赖）：仅监听回环地址、启动时选定一个根目录、配对令牌鉴权，为 IDE 提供真实 Shell 终端（WebSocket）、真实 git 与该目录内的文件读写；bridge 服务端本身仍不执行任何代码 |
+| [package.json](package.json) / [bin/webcoder.mjs](bin/webcoder.mjs) | npm 包定义与一键启动 CLI：`npx webcoder` 后台启动（自动找空闲端口、打开浏览器），另有 `status` / `stop` / `update` 子命令 |
 
 ### 快速启动
 
 运行要求：Node.js（支持 ES Module 与内置 `fetch`）与现代桌面浏览器（支持 `IndexedDB` 与 `DecompressionStream('deflate-raw')`；Chrome / Edge 额外支持 `showDirectoryPicker` 直接读写本机目录）。
+
+**一键启动（npm CLI）**：发布到 npm 后一条命令即可（包名 `webcoder`）：
+
+```sh
+npx webcoder            # 后台启动、自动找空闲端口（47321 起）、自动打开浏览器
+webcoder status         # 查看运行状态与地址
+webcoder stop           # 停止后台实例
+webcoder update         # 更新（git 检出走 git pull，全局安装走 npm install -g webcoder@latest）
+```
+
+CLI 的运行状态记在 `~/.webcoder/run.json`、日志在 `~/.webcoder/bridge.log`；`webcoder start --port N` 可指定端口，`--no-open` 可不打开浏览器。从源码运行时把 `webcoder` 换成 `node bin/webcoder.mjs` 即可，行为一致。
+
+手动启动：
 
 1. 启动无状态 WebIDE 托管服务：
    ```sh
@@ -161,10 +175,24 @@ A lightweight, privacy-first browser IDE where **all user data—workspaces, loc
 | [test/test.mjs](test/test.mjs) | Automated self-check verifying stateless server behavior, zero disk writes, CSP policy, public host allowlisting, bot blocking, IP rate limits, and removal of legacy endpoints |
 | [test/mock-acp.mjs](test/mock-acp.mjs) | Retained mock ACP script (server-side agent spawning is disabled in browser-local privacy mode) |
 | [companion/companion.mjs](companion/companion.mjs) | **Optional** local execution layer the user runs on their own machine (zero dependencies): loopback-only, one root folder chosen at launch, pairing-token auth; gives the IDE a real shell terminal (WebSocket), real git and fs access inside that folder. The bridge server itself still executes nothing |
+| [package.json](package.json) / [bin/webcoder.mjs](bin/webcoder.mjs) | npm package definition and the one-command CLI: `npx webcoder` starts in the background (auto free port, opens the browser), plus `status` / `stop` / `update` subcommands |
 
 ### Quick Start
 
 Prerequisites: Node.js (with ES Modules and built-in `fetch`) and a modern desktop browser supporting `IndexedDB` and `DecompressionStream('deflate-raw')` (Chromium browsers additionally support `showDirectoryPicker` for direct local folder read/write).
+
+**One-command start (npm CLI)**, once published to npm (package name `webcoder`):
+
+```sh
+npx webcoder            # background start, auto-picks a free port (from 47321), opens the browser
+webcoder status         # running state and URL
+webcoder stop           # stop the background instance
+webcoder update         # git pull in a checkout, npm install -g webcoder@latest when installed globally
+```
+
+Run state lives in `~/.webcoder/run.json`, logs in `~/.webcoder/bridge.log`; `webcoder start --port N` pins a port and `--no-open` skips opening the browser. From a source checkout, replace `webcoder` with `node bin/webcoder.mjs` — same behavior.
+
+Manual start:
 
 1. Start the stateless WebIDE server:
    ```sh
